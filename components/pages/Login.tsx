@@ -1,18 +1,16 @@
+
 import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../App';
 import { login, getConfig, saveConfig, validateConfig } from '../../services/storage';
-import { Scale, User, Lock, Cloud, X, Wifi, ShieldCheck, Loader2, Code, Database, Globe, Key } from 'lucide-react';
+import { Scale, User, Lock, Cloud, X, Wifi, ShieldCheck, Loader2, Database, Globe, Key, Smartphone, MessageSquare, Box } from 'lucide-react';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   
-  // States for Cloud Setup Modal
   const [showCloudSetup, setShowCloudSetup] = useState(false);
-  const [connectMode, setConnectMode] = useState<'SMART' | 'MANUAL'>('MANUAL');
-  const [cloudJson, setCloudJson] = useState('');
   const [manualForm, setManualForm] = useState({
     apiKey: '', 
     projectId: '', 
@@ -44,21 +42,15 @@ const Login: React.FC = () => {
     setSetupError('');
     setIsConnecting(true);
     try {
-        let firebaseConfig;
-        if (connectMode === 'SMART') {
-            firebaseConfig = JSON.parse(cloudJson);
-        } else {
-            if (!manualForm.apiKey || !manualForm.projectId) {
-                throw new Error("API Key y Project ID son obligatorios");
-            }
-            firebaseConfig = { ...manualForm };
+        if (!manualForm.apiKey || !manualForm.projectId || !manualForm.databaseURL) {
+            throw new Error("El API Key, Project ID y Database URL son obligatorios");
         }
-
-        const res = await validateConfig(firebaseConfig);
+        
+        const res = await validateConfig(manualForm);
         if (!res.valid) throw new Error(res.error);
         
-        saveConfig({ ...config, firebaseConfig });
-        alert("✅ Conexión establecida con éxito. El sistema se sincronizará.");
+        saveConfig({ ...config, firebaseConfig: manualForm });
+        alert("✅ Conexión establecida con éxito.");
         window.location.reload();
     } catch (e: any) {
         setSetupError(e.message || "Error en los datos ingresados");
@@ -69,13 +61,12 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-blue-950 relative overflow-hidden">
-      {/* Background Decorative Elements */}
       <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
           <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-500 rounded-full blur-[100px]"></div>
           <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-indigo-500 rounded-full blur-[100px]"></div>
       </div>
 
-      <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-white/20 relative z-10">
+      <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-white/20 relative z-10 text-left">
         
         <div className="mb-10 flex flex-col items-center">
           <div className="bg-blue-900 p-5 rounded-3xl mb-5 shadow-xl shadow-blue-900/20">
@@ -142,7 +133,7 @@ const Login: React.FC = () => {
                 onClick={() => setShowCloudSetup(true)}
                 className="flex items-center gap-2 text-blue-600 hover:text-blue-800 transition-colors text-[10px] font-black uppercase tracking-widest py-2.5 px-5 bg-blue-50 rounded-2xl border border-blue-100"
             >
-                <Cloud size={14} /> Ajustes de Conexión Manual
+                <Cloud size={14} /> Ajustes de Nube Cloud
             </button>
             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                 AviControl Pro &bull; {new Date().getFullYear()}
@@ -150,89 +141,80 @@ const Login: React.FC = () => {
         </div>
       </div>
 
-      {/* Cloud Setup Modal */}
       {showCloudSetup && (
           <div className="fixed inset-0 bg-blue-950/95 backdrop-blur-lg flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl border-8 border-white max-h-[90vh] overflow-y-auto">
+              <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl border-8 border-white max-h-[95vh] overflow-y-auto">
                   <div className="flex justify-between items-center mb-6">
                       <div className="flex items-center gap-4">
                           <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl"><Wifi size={24}/></div>
-                          <div>
-                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Conexión Manual</h3>
-                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Configurar parámetros de Nube</p>
+                          <div className="text-left">
+                            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Parámetros Cloud</h3>
+                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Configuración Firebase</p>
                           </div>
                       </div>
                       <button onClick={() => setShowCloudSetup(false)} className="text-slate-300 hover:text-slate-600 transition-colors"><X size={24}/></button>
                   </div>
                   
-                  <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
-                      <button 
-                        onClick={() => setConnectMode('MANUAL')} 
-                        className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${connectMode === 'MANUAL' ? 'bg-white text-blue-900 shadow-lg' : 'text-slate-400'}`}
-                      >
-                        Ingreso Manual
-                      </button>
-                      <button 
-                        onClick={() => setConnectMode('SMART')} 
-                        className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${connectMode === 'SMART' ? 'bg-white text-blue-900 shadow-lg' : 'text-slate-400'}`}
-                      >
-                        Importar JSON
-                      </button>
-                  </div>
-                  
-                  {connectMode === 'MANUAL' ? (
-                      <div className="space-y-4 mb-6">
-                          <div className="relative">
-                              <Database className="absolute left-4 top-4 text-slate-300" size={16} />
-                              <input 
-                                value={manualForm.projectId} 
-                                onChange={e => setManualForm({...manualForm, projectId: e.target.value})}
-                                placeholder="Project ID"
-                                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:border-blue-500"
-                              />
-                          </div>
-                          <div className="relative">
-                              <Key className="absolute left-4 top-4 text-slate-300" size={16} />
-                              <input 
-                                value={manualForm.apiKey} 
-                                onChange={e => setManualForm({...manualForm, apiKey: e.target.value})}
-                                placeholder="API Key"
-                                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:border-blue-500"
-                              />
-                          </div>
-                          <div className="relative">
-                              <Globe className="absolute left-4 top-4 text-slate-300" size={16} />
-                              <input 
-                                value={manualForm.authDomain} 
-                                onChange={e => setManualForm({...manualForm, authDomain: e.target.value})}
-                                placeholder="Auth Domain (opcional)"
-                                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:border-blue-500"
-                              />
-                          </div>
-                          <div className="relative">
-                              <Code className="absolute left-4 top-4 text-slate-300" size={16} />
-                              <input 
-                                value={manualForm.databaseURL} 
-                                onChange={e => setManualForm({...manualForm, databaseURL: e.target.value})}
-                                placeholder="Database URL (opcional)"
-                                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:border-blue-500"
-                              />
-                          </div>
-                      </div>
-                  ) : (
-                      <div className="relative mb-6">
-                          <Code className="absolute left-4 top-4 text-slate-300" size={18} />
-                          <textarea 
-                            value={cloudJson}
-                            onChange={e => setCloudJson(e.target.value)}
-                            placeholder='{ "apiKey": "...", "projectId": "...", ... }'
-                            className="w-full h-40 pl-12 pr-4 py-4 text-xs font-mono border-2 border-slate-100 bg-slate-50 rounded-3xl outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
+                  <div className="space-y-3 mb-6">
+                      <div className="relative">
+                          <Database className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                          <input 
+                            value={manualForm.projectId} 
+                            onChange={e => setManualForm({...manualForm, projectId: e.target.value})}
+                            placeholder="Project ID * (Ej: my-app-123)"
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[11px] font-bold outline-none focus:border-blue-500"
                           />
                       </div>
-                  )}
+                      <div className="relative">
+                          <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                          <input 
+                            value={manualForm.apiKey} 
+                            onChange={e => setManualForm({...manualForm, apiKey: e.target.value})}
+                            placeholder="API Key *"
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[11px] font-bold outline-none focus:border-blue-500"
+                          />
+                      </div>
+                      <div className="relative">
+                          <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                          <input 
+                            value={manualForm.databaseURL} 
+                            onChange={e => setManualForm({...manualForm, databaseURL: e.target.value})}
+                            placeholder="Database URL * (Ej: https://mi-app.firebaseio.com)"
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[11px] font-bold outline-none focus:border-blue-500"
+                          />
+                      </div>
+                      <div className="relative">
+                          <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                          <input 
+                            value={manualForm.appId} 
+                            onChange={e => setManualForm({...manualForm, appId: e.target.value})}
+                            placeholder="App ID (Opcional)"
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[11px] font-bold outline-none focus:border-blue-500"
+                          />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                         <div className="relative">
+                            <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                            <input value={manualForm.authDomain} onChange={e => setManualForm({...manualForm, authDomain: e.target.value})} placeholder="Auth Domain" className="w-full pl-10 pr-3 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[10px] font-bold outline-none focus:border-blue-500" />
+                         </div>
+                         <div className="relative">
+                            <Box className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                            <input value={manualForm.storageBucket} onChange={e => setManualForm({...manualForm, storageBucket: e.target.value})} placeholder="Bucket" className="w-full pl-10 pr-3 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[10px] font-bold outline-none focus:border-blue-500" />
+                         </div>
+                      </div>
+                      <div className="relative">
+                          <MessageSquare className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                          <input 
+                            value={manualForm.messagingSenderId} 
+                            onChange={e => setManualForm({...manualForm, messagingSenderId: e.target.value})}
+                            placeholder="Messaging Sender ID"
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-[11px] font-bold outline-none focus:border-blue-500"
+                          />
+                      </div>
+                  </div>
 
                   {setupError && (
-                      <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase border border-red-100 flex items-center gap-3">
+                      <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase border border-red-100 flex items-center gap-3 text-left">
                           <ShieldCheck size={16} className="text-red-400 shrink-0"/>
                           {setupError}
                       </div>
@@ -251,7 +233,7 @@ const Login: React.FC = () => {
                         className="flex-[2] bg-blue-900 disabled:bg-slate-200 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-800 transition-all flex items-center justify-center gap-2"
                       >
                         {isConnecting ? <Loader2 size={18} className="animate-spin"/> : <ShieldCheck size={18}/>}
-                        {isConnecting ? 'Validando...' : 'Guardar y Conectar'}
+                        {isConnecting ? 'Validando...' : 'Vincular Nube'}
                       </button>
                   </div>
               </div>

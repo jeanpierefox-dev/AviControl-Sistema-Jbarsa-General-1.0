@@ -1,7 +1,18 @@
-
 import { User, UserRole, Batch, ClientOrder, AppConfig } from '../types';
-import { initializeApp, getApps, getApp, deleteApp } from 'firebase/app';
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, enableIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
+import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
+import { 
+    getFirestore, 
+    collection, 
+    doc, 
+    setDoc, 
+    deleteDoc, 
+    onSnapshot, 
+    enableIndexedDbPersistence, 
+    initializeFirestore, 
+    CACHE_SIZE_UNLIMITED,
+    Firestore,
+    terminate
+} from 'firebase/firestore';
 
 const KEYS = {
   USERS: 'avi_users',
@@ -21,66 +32,118 @@ const safeParse = (key: string, fallback: any) => {
     }
 };
 
-let db: any = null;
+let db: Firestore | null = null;
 let unsubscribers: Function[] = [];
 
+/**
+ * Valida la configuración de Firebase intentando una conexión real.
+ */
 export const validateConfig = async (firebaseConfig: any): Promise<{ valid: boolean; error?: string }> => {
-    let app: any = null;
+    let app: FirebaseApp | null = null;
+    let tempDb: Firestore | null = null;
+    const validatorName = `validator_${Date.now()}`;
+
     try {
-        if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-            return { valid: false, error: "Faltan campos obligatorios (API Key o Project ID)." };
+        if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.databaseURL) {
+            return { valid: false, error: "⚠️ Campos incompletos: API Key, Project ID y Database URL son obligatorios." };
         }
-        const tempName = 'validator_' + Date.now() + Math.random().toString(36).substring(7);
-        app = initializeApp(firebaseConfig, tempName);
-        const db = getFirestore(app);
-        await setDoc(doc(db, 'config', 'validation_test'), { check: true, ts: Date.now() }, { merge: true });
+        
+        // Limpiar apps previas con el mismo nombre si existen
+        const apps = getApps();
+        for (const existingApp of apps) {
+            if (existingApp.name.startsWith('validator_')) {
+                await deleteApp(existingApp);
+            }
+        }
+
+        app = initializeApp(firebaseConfig, validatorName);
+        
+        // Intentar obtener firestore. Si falla aquí, es un error de registro de SDK.
+        try {
+            tempDb = getFirestore(app);
+        } catch (e: any) {
+            console.error("Firestore Registry Error:", e);
+            return { 
+                valid: false, 
+                error: "❌ Error de Registro del SDK: Se detectó una inconsistencia en los módulos de Firebase del navegador. Por favor, limpie la caché y recargue." 
+            };
+        }
+        
+        // Prueba de escritura real para verificar reglas
+        const testRef = doc(tempDb, 'system_test', 'connection_check');
+        await setDoc(testRef, { 
+            status: 'success', 
+            timestamp: Date.now()
+        }, { merge: true });
+        
         return { valid: true };
     } catch (e: any) {
-        let msg = e.message || "Error desconocido";
-        if (e.code === 'permission-denied') msg = "⛔ PERMISOS DENEGADOS: Revisa las reglas de Firestore.";
-        else if (e.code === 'unavailable') msg = "📡 SIN CONEXIÓN: Verifica tu internet.";
+        console.error("Firebase Validation Error:", e);
+        let msg = "Error de conexión.";
+        
+        if (e.message?.includes('not available') || e.message?.includes('not been registered')) {
+            msg = "❌ Error crítico: El servicio Firestore no pudo registrarse correctamente. Conflicto de versiones detectado.";
+        } else if (e.code === 'permission-denied') {
+            msg = "⛔ Permisos denegados: Revise sus Reglas de Seguridad en Firebase.";
+        } else {
+            msg = `❌ Error: ${e.message || 'Credenciales inválidas'}`;
+        }
+        
         return { valid: false, error: msg };
     } finally {
-        if (app) {
-            try { await deleteApp(app); } catch (e) {}
-        }
+        if (tempDb) { try { await terminate(tempDb); } catch (e) {} }
+        if (app) { try { await deleteApp(app); } catch (e) {} }
     }
 };
 
+/**
+ * Inicializa el servicio de sincronización principal.
+ */
 export const initCloudSync = async () => {
   const config = getConfig();
   unsubscribers.forEach(unsub => unsub());
   unsubscribers = [];
 
-  if (config.firebaseConfig?.apiKey && config.firebaseConfig?.projectId) {
+  if (config.firebaseConfig?.apiKey && config.firebaseConfig?.projectId && config.firebaseConfig?.databaseURL) {
     try {
-      let app;
-      if (!getApps().length) {
+      let app: FirebaseApp;
+      const apps = getApps();
+      
+      if (!apps.length) {
           app = initializeApp(config.firebaseConfig);
-          db = initializeFirestore(app, { cacheSizeBytes: CACHE_SIZE_UNLIMITED });
-          try { await enableIndexedDbPersistence(db); } catch (err) {}
+          try {
+            db = initializeFirestore(app, { cacheSizeBytes: CACHE_SIZE_UNLIMITED });
+            await enableIndexedDbPersistence(db); 
+          } catch (err: any) {
+            if (!db) db = getFirestore(app);
+            console.warn("Persistencia offline no disponible:", err.code);
+          }
       } else {
-          app = getApp(); 
+          app = apps[0]; 
           db = getFirestore(app);
       }
       startListeners();
     } catch (e) {
-      console.error("Error al conectar con Firebase:", e);
+      console.error("Error al conectar con la nube:", e);
     }
   }
 };
 
 const startListeners = () => {
   if (!db) return;
+  
   const syncCollection = (colName: string, storageKey: string, eventName: string) => {
+    if (!db) return;
     try {
         const q = collection(db, colName);
         const unsub = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
           if (snapshot.empty && snapshot.metadata.fromCache) return;
+          
           const currentLocalRaw = localStorage.getItem(storageKey);
           const currentLocal: any[] = currentLocalRaw ? JSON.parse(currentLocalRaw) : [];
           const dataMap = new Map<string, any>();
           currentLocal.forEach(item => dataMap.set(item.id, item));
+          
           let hasChanges = false;
           snapshot.docChanges().forEach((change) => {
               const docData = change.doc.data();
@@ -94,15 +157,21 @@ const startListeners = () => {
                   }
               }
           });
+          
           if (hasChanges) {
               const mergedData = Array.from(dataMap.values());
               localStorage.setItem(storageKey, JSON.stringify(mergedData));
               window.dispatchEvent(new Event(eventName));
           }
+        }, (error) => {
+            console.error(`Error en listener ${colName}:`, error);
         });
         unsubscribers.push(unsub);
-    } catch(e) {}
+    } catch(e) {
+        console.error(`Fallo crítico al iniciar listener ${colName}:`, e);
+    }
   };
+  
   syncCollection('users', KEYS.USERS, 'avi_data_users');
   syncCollection('batches', KEYS.BATCHES, 'avi_data_batches');
   syncCollection('orders', KEYS.ORDERS, 'avi_data_orders');
@@ -111,14 +180,11 @@ const startListeners = () => {
 export const uploadLocalToCloud = async () => {
   if (!db) return;
   const upload = async (colName: string, data: any[]) => {
-      const batchSize = 400; 
-      for (let i = 0; i < data.length; i += batchSize) {
-          const chunk = data.slice(i, i + batchSize);
-          await Promise.all(chunk.map(item => {
-              if(item && item.id) return setDoc(doc(db, colName, item.id), item, { merge: true });
-              return Promise.resolve();
-          }));
-      }
+      if (!db) return;
+      await Promise.all(data.map(item => {
+          if(item && item.id && db) return setDoc(doc(db, colName, item.id), item, { merge: true });
+          return Promise.resolve();
+      }));
   };
   await upload('users', getUsers());
   await upload('batches', getBatches());
@@ -139,7 +205,6 @@ const seedData = () => {
     localStorage.setItem(KEYS.USERS, JSON.stringify([admin]));
   }
   if (localStorage.getItem(KEYS.CONFIG) === null) {
-    // UPDATED: Default empty crate batch set to 10 as requested
     const config: AppConfig = { 
       companyName: 'AviControl Pro', 
       logoUrl: '', 
@@ -212,7 +277,7 @@ export const saveConfig = (cfg: AppConfig) => {
 };
 export const isFirebaseConfigured = (): boolean => {
   const c = getConfig();
-  return !!(c.firebaseConfig?.apiKey && c.firebaseConfig?.projectId);
+  return !!(c.firebaseConfig?.apiKey && c.firebaseConfig?.projectId && c.firebaseConfig?.databaseURL);
 };
 export const restoreBackup = (data: any) => {
     if (data.users) localStorage.setItem(KEYS.USERS, data.users);
