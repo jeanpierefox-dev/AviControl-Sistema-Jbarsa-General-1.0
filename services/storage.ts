@@ -48,28 +48,27 @@ export const validateConfig = async (firebaseConfig: any): Promise<{ valid: bool
             return { valid: false, error: "⚠️ Campos incompletos: API Key, Project ID y Database URL son obligatorios." };
         }
         
-        // Limpiar apps previas con el mismo nombre si existen
+        // Limpiar apps previas de validación
         const apps = getApps();
         for (const existingApp of apps) {
             if (existingApp.name.startsWith('validator_')) {
-                await deleteApp(existingApp);
+                try { await deleteApp(existingApp); } catch(e) {}
             }
         }
 
         app = initializeApp(firebaseConfig, validatorName);
         
-        // Intentar obtener firestore. Si falla aquí, es un error de registro de SDK.
         try {
             tempDb = getFirestore(app);
         } catch (e: any) {
             console.error("Firestore Registry Error:", e);
             return { 
                 valid: false, 
-                error: "❌ Error de Registro del SDK: Se detectó una inconsistencia en los módulos de Firebase del navegador. Por favor, limpie la caché y recargue." 
+                error: "❌ Error de Registro del SDK: Se detectó una inconsistencia en los módulos de Firebase. Por favor, limpie la caché del navegador y recargue." 
             };
         }
         
-        // Prueba de escritura real para verificar reglas
+        // Prueba de escritura real
         const testRef = doc(tempDb, 'system_test', 'connection_check');
         await setDoc(testRef, { 
             status: 'success', 
@@ -82,11 +81,11 @@ export const validateConfig = async (firebaseConfig: any): Promise<{ valid: bool
         let msg = "Error de conexión.";
         
         if (e.message?.includes('not available') || e.message?.includes('not been registered')) {
-            msg = "❌ Error crítico: El servicio Firestore no pudo registrarse correctamente. Conflicto de versiones detectado.";
+            msg = "❌ Error crítico: El servicio Firestore no pudo registrarse. Esto suele ser por un conflicto de versiones en el navegador. Intente recargar la página.";
         } else if (e.code === 'permission-denied') {
-            msg = "⛔ Permisos denegados: Revise sus Reglas de Seguridad en Firebase.";
+            msg = "⛔ Permisos denegados: Verifique las Reglas de Seguridad en su consola de Firebase.";
         } else {
-            msg = `❌ Error: ${e.message || 'Credenciales inválidas'}`;
+            msg = `❌ Error: ${e.message || 'Credenciales inválidas o falta de conexión'}`;
         }
         
         return { valid: false, error: msg };
@@ -109,7 +108,10 @@ export const initCloudSync = async () => {
       let app: FirebaseApp;
       const apps = getApps();
       
-      if (!apps.length) {
+      // Usamos la app por defecto si ya existe, sino la creamos
+      const defaultApp = apps.find(a => a.name === '[DEFAULT]');
+      
+      if (!defaultApp) {
           app = initializeApp(config.firebaseConfig);
           try {
             db = initializeFirestore(app, { cacheSizeBytes: CACHE_SIZE_UNLIMITED });
@@ -119,7 +121,7 @@ export const initCloudSync = async () => {
             console.warn("Persistencia offline no disponible:", err.code);
           }
       } else {
-          app = apps[0]; 
+          app = defaultApp;
           db = getFirestore(app);
       }
       startListeners();
