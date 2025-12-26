@@ -75,7 +75,6 @@ const WeighingStation: React.FC = () => {
         setQtyInput('1'); 
     } else {
       if (activeTab === 'FULL') setQtyInput(config.defaultFullCrateBatch.toString());
-      // REQUERIMIENTO: Predeterminado de jabas vacías estrictamente en 10
       if (activeTab === 'EMPTY') setQtyInput('10'); 
       if (activeTab === 'MORTALITY') setQtyInput('1');
     }
@@ -195,8 +194,7 @@ const WeighingStation: React.FC = () => {
     doc.setFont("helvetica", "normal");
     doc.text(order.clientName.toUpperCase(), 5, 33);
 
-    // CUADRO DE PESOS TOTALES
-    doc.rect(5, 38, 70, 52); // Cuadro contenedor ampliado
+    doc.rect(5, 38, 70, 52); 
     doc.setFont("helvetica", "bold");
     doc.text("RESUMEN DE OPERACIÓN", 40, 44, { align: 'center' });
     doc.line(5, 46, 75, 46);
@@ -222,13 +220,13 @@ const WeighingStation: React.FC = () => {
     doc.text(`S/. ${price.toFixed(2)}`, 73, 78, { align: 'right' });
 
     doc.setFontSize(12).setFont("helvetica", "bold");
-    doc.setTextColor(0, 100, 0); // Verde oscuro para el total
+    doc.setTextColor(0, 100, 0); 
     doc.text(`TOTAL A PAGAR:`, 7, 85);
     doc.text(`S/. ${total.toFixed(2)}`, 73, 85, { align: 'right' });
     doc.setTextColor(0);
 
     doc.setFontSize(8).setFont("helvetica", "normal").setTextColor(100);
-    doc.text(`Método de Pago: ${order.paymentMethod === 'CASH' ? 'CONTADO' : 'CRÉDITO'}`, 5, 95);
+    doc.text(`Método de Pago: ${order.paymentStatus === 'PAID' ? 'CONTADO' : 'CRÉDITO'}`, 5, 95);
     
     doc.text("Gracias por su preferencia", 40, 110, { align: 'center' });
 
@@ -241,61 +239,113 @@ const WeighingStation: React.FC = () => {
     const doc = new jsPDF();
     const company = config.companyName.toUpperCase();
 
-    doc.setFont("helvetica", "bold").setFontSize(18);
-    doc.text(company, 105, 20, { align: 'center' });
+    // Reducción de márgenes iniciales
+    doc.setFont("helvetica", "bold").setFontSize(14);
+    doc.text(company, 105, 12, { align: 'center' });
     
-    doc.setFontSize(12).setFont("helvetica", "normal");
-    doc.text("REPORTE DETALLADO DE CARGA", 105, 28, { align: 'center' });
-    doc.text(`Cliente: ${activeOrder.clientName}`, 105, 35, { align: 'center' });
-    doc.text(`Fecha: ${new Date().toLocaleString()}`, 105, 42, { align: 'center' });
+    doc.setFontSize(10).setFont("helvetica", "normal");
+    doc.text("REPORTE OPERATIVO DETALLADO", 105, 18, { align: 'center' });
+    doc.setFontSize(9);
+    doc.text(`Cliente: ${activeOrder.clientName} | Fecha: ${new Date().toLocaleString()}`, 105, 23, { align: 'center' });
 
+    // Tabla Resumen Compacta
     autoTable(doc, {
-      startY: 50,
-      head: [['Concepto', 'Cantidad', 'Peso Total (kg)']],
+      startY: 28,
+      margin: { left: 14, right: 14 },
+      head: [['Concepto', 'Cant.', 'Peso Total (kg)']],
       body: [
-        ['Bruto (Llenas)', t.qF, t.wF.toFixed(2)],
-        ['Tara (Vacías)', t.qE, t.wE.toFixed(2)],
-        ['Merma / Mort.', t.qM, t.wM.toFixed(2)],
-        [{ content: 'PESO NETO LIQUIDABLE', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }, '', { content: t.net.toFixed(2), styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }]
+        ['Bruto (Llenas)', `${t.qF} Jabas`, t.wF.toFixed(2)],
+        ['Tara (Vacías)', `${t.qE} Jabas`, t.wE.toFixed(2)],
+        ['Merma / Mort.', `${t.qM} Und`, t.wM.toFixed(2)],
+        [{ content: 'PESO NETO LIQUIDABLE', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }, '', { content: `${t.net.toFixed(2)} kg`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }]
       ],
       theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 1 },
       headStyles: { fillColor: [23, 37, 84] }
     });
 
-    const fullRecs = activeOrder.records.filter(r => r.type === 'FULL');
-    const emptyRecs = activeOrder.records.filter(r => r.type === 'EMPTY');
-    const mortRecs = activeOrder.records.filter(r => r.type === 'MORTALITY');
-    const maxLen = Math.max(fullRecs.length, emptyRecs.length, mortRecs.length);
+    // Función auxiliar para generar grillas de pesadas (multi-columna)
+    const generateGridData = (records: WeighingRecord[], cols: number) => {
+        const rows = [];
+        for (let i = 0; i < records.length; i += cols) {
+            const row = [];
+            for (let j = 0; j < cols; j++) {
+                const r = records[i + j];
+                if (r) {
+                    row.push(r.quantity.toString());
+                    row.push(r.weight.toFixed(2));
+                } else {
+                    row.push('');
+                    row.push('');
+                }
+            }
+            rows.push(row);
+        }
+        return rows;
+    };
 
-    const rows = [];
-    for (let i = 0; i < maxLen; i++) {
-      rows.push([
-        fullRecs[i] ? fullRecs[i].quantity : '',
-        fullRecs[i] ? fullRecs[i].weight.toFixed(2) : '',
-        emptyRecs[i] ? emptyRecs[i].quantity : '',
-        emptyRecs[i] ? emptyRecs[i].weight.toFixed(2) : '',
-        mortRecs[i] ? mortRecs[i].quantity : '',
-        mortRecs[i] ? mortRecs[i].weight.toFixed(2) : ''
-      ]);
-    }
+    const fullRecs = activeOrder.records.filter(r => r.type === 'FULL').sort((a,b) => a.timestamp - b.timestamp);
+    const emptyRecs = activeOrder.records.filter(r => r.type === 'EMPTY').sort((a,b) => a.timestamp - b.timestamp);
+    const mortRecs = activeOrder.records.filter(r => r.type === 'MORTALITY').sort((a,b) => a.timestamp - b.timestamp);
+
+    // 1. Detalle Jabas Llenas (Grilla de 4 bloques)
+    doc.setFont("helvetica", "bold").setFontSize(9);
+    doc.text("1. DETALLE DE PESADAS LLENAS (BRUTO)", 14, (doc as any).lastAutoTable.finalY + 8);
 
     autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 15,
-      head: [
-        [
-          { content: 'PESADAS LLENAS', colSpan: 2, styles: { halign: 'center', fillColor: [30, 41, 59] } },
-          { content: 'PESADAS VACÍAS', colSpan: 2, styles: { halign: 'center', fillColor: [71, 85, 105] } },
-          { content: 'PESADAS MERMA', colSpan: 2, styles: { halign: 'center', fillColor: [153, 27, 27] } }
-        ],
-        ['Cant.', 'Peso', 'Cant.', 'Peso', 'Cant.', 'Peso']
-      ],
-      body: rows,
+      startY: (doc as any).lastAutoTable.finalY + 11,
+      margin: { left: 14, right: 14 },
+      head: [[
+          { content: 'Bloque 1', colSpan: 2, styles: { halign: 'center' } },
+          { content: 'Bloque 2', colSpan: 2, styles: { halign: 'center' } },
+          { content: 'Bloque 3', colSpan: 2, styles: { halign: 'center' } },
+          { content: 'Bloque 4', colSpan: 2, styles: { halign: 'center' } }
+      ], ['Cant.', 'Peso', 'Cant.', 'Peso', 'Cant.', 'Peso', 'Cant.', 'Peso']],
+      body: generateGridData(fullRecs, 4),
       theme: 'grid',
-      headStyles: { fontSize: 8 },
-      bodyStyles: { fontSize: 8, halign: 'center' }
+      styles: { fontSize: 7, cellPadding: 0.5, halign: 'center' },
+      headStyles: { fillColor: [30, 41, 59], fontSize: 7 }
     });
 
-    doc.save(`Reporte_Completo_${activeOrder.clientName}_${Date.now()}.pdf`);
+    // 2. Detalle Jabas Vacías (Grilla de 3 bloques)
+    if (emptyRecs.length > 0) {
+        doc.setFont("helvetica", "bold").setFontSize(9);
+        doc.text("2. DETALLE DE TARA (VACÍAS)", 14, (doc as any).lastAutoTable.finalY + 8);
+        autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY + 11,
+            margin: { left: 14, right: 14 },
+            head: [[
+                { content: 'B1', colSpan: 2, styles: { halign: 'center' } },
+                { content: 'B2', colSpan: 2, styles: { halign: 'center' } },
+                { content: 'B3', colSpan: 2, styles: { halign: 'center' } }
+            ], ['C.', 'Kg', 'C.', 'Kg', 'C.', 'Kg']],
+            body: generateGridData(emptyRecs, 3),
+            theme: 'grid',
+            styles: { fontSize: 7, cellPadding: 0.5, halign: 'center' },
+            headStyles: { fillColor: [71, 85, 105], fontSize: 7 }
+        });
+    }
+
+    // 3. Detalle Merma (Grilla de 3 bloques)
+    if (mortRecs.length > 0) {
+        doc.setFont("helvetica", "bold").setFontSize(9);
+        doc.text("3. DETALLE DE MERMA / MORTALIDAD", 14, (doc as any).lastAutoTable.finalY + 8);
+        autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY + 11,
+            margin: { left: 14, right: 14 },
+            head: [[
+                { content: 'B1', colSpan: 2, styles: { halign: 'center' } },
+                { content: 'B2', colSpan: 2, styles: { halign: 'center' } },
+                { content: 'B3', colSpan: 2, styles: { halign: 'center' } }
+            ], ['C.', 'Kg', 'C.', 'Kg', 'C.', 'Kg']],
+            body: generateGridData(mortRecs, 3),
+            theme: 'grid',
+            styles: { fontSize: 7, cellPadding: 0.5, halign: 'center' },
+            headStyles: { fillColor: [153, 27, 27], fontSize: 7 }
+        });
+    }
+
+    doc.save(`Reporte_Detallado_${activeOrder.clientName}_${Date.now()}.pdf`);
   };
 
   const handlePayment = () => {
@@ -416,7 +466,6 @@ const WeighingStation: React.FC = () => {
             </div>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
-            {/* BOTÓN REGRESAR CORREGIDO PARA IR A /LOTES */}
             <button onClick={() => navigate('/lotes')} className="bg-white border-2 border-slate-100 p-2 rounded-xl hover:bg-slate-50 text-slate-400 shadow-sm transition-all">
                 <ArrowLeft size={16}/>
             </button>
@@ -477,7 +526,6 @@ const WeighingStation: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full space-y-3 max-w-7xl mx-auto">
-      {/* CABECERA COMPACTA */}
       <div className="bg-blue-950 p-3 rounded-2xl shadow-xl text-white border-b-4 border-blue-900">
         <div className="flex flex-col lg:flex-row justify-between items-center gap-3">
           <div className="flex items-center gap-3 w-full lg:w-auto">
@@ -562,7 +610,6 @@ const WeighingStation: React.FC = () => {
         </div>
       )}
 
-      {/* REGISTROS RECIENTES */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1 overflow-hidden">
         {[
           { key: 'FULL', title: 'Registro Bruto', icon: <Package size={12}/>, color: 'blue' },
