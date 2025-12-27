@@ -5,7 +5,7 @@ import { getConfig, saveConfig, resetApp, isFirebaseConfigured, validateConfig, 
 import { 
   Save, Check, Cloud, X, Loader2, Database, Key, Search, Cpu, Smartphone, Link, 
   Upload, Image as ImageIcon, Globe, ServerCrash, ClipboardCheck, ExternalLink, 
-  HelpCircle, MessageSquare, Box, Layout, Trash2, Flame, Printer, Scale, Bluetooth, BluetoothOff
+  HelpCircle, MessageSquare, Box, Layout, Trash2, Flame, Printer, Scale, Bluetooth, BluetoothOff, AlertCircle, MapPin
 } from 'lucide-react';
 import { AuthContext } from '../../App';
 
@@ -19,7 +19,12 @@ const Configuration: React.FC = () => {
   const [testError, setTestError] = useState('');
   const [isTested, setIsTested] = useState(false);
   
-  const [browserSupport, setBrowserSupport] = useState({ serial: false, bluetooth: false });
+  const [browserSupport, setBrowserSupport] = useState({ 
+    serial: false, 
+    bluetooth: false, 
+    secure: window.isSecureContext 
+  });
+  
   const [manualForm, setManualForm] = useState({
       apiKey: '', 
       projectId: '', 
@@ -36,7 +41,8 @@ const Configuration: React.FC = () => {
       setIsConnected(isFirebaseConfigured());
       setBrowserSupport({
           serial: 'serial' in navigator,
-          bluetooth: 'bluetooth' in navigator
+          bluetooth: 'bluetooth' in navigator,
+          secure: window.isSecureContext
       });
 
       if (config.firebaseConfig) {
@@ -115,14 +121,28 @@ const Configuration: React.FC = () => {
   const startNativeConnect = async (type: 'PRINTER' | 'SCALE_BT') => {
       try {
           if (!browserSupport.bluetooth) {
-              alert("Bluetooth no soportado en este navegador o dispositivo.");
+              alert("❌ Tu navegador o dispositivo no soporta Bluetooth Web.\n\nEn iOS (iPhone) usa navegadores como Bluefy o WebBLE.\nEn Android usa Chrome y activa la UBICACIÓN.");
+              return;
+          }
+
+          if (!browserSupport.secure) {
+              alert("❌ Bluetooth requiere una conexión segura (HTTPS).\nPor favor, accede mediante una URL segura.");
               return;
           }
           
-          // Nota: Web Bluetooth requiere interacción del usuario y HTTPS
+          // Solicitar permiso de ubicación preventivamente (ayuda en algunos Android)
+          if ('geolocation' in navigator) {
+             try { await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 2000 })); } catch(e) { console.warn("Location check failed, continuing anyway"); }
+          }
+
+          // Intentar abrir el selector de dispositivos del sistema
           const device = await (navigator as any).bluetooth.requestDevice({
               acceptAllDevices: true,
-              optionalServices: ['battery_service'] // Ejemplo de servicio
+              optionalServices: [
+                  '000018f0-0000-1000-8000-00805f9b34fb', // Servicio Genérico de Impresoras Térmicas
+                  '00001101-0000-1000-8000-00805f9b34fb', // Serial Port Profile (SPP)
+                  'battery_service'
+              ]
           });
 
           if (device) {
@@ -138,8 +158,14 @@ const Configuration: React.FC = () => {
               alert(`✅ Vinculación con ${device.name || 'Dispositivo'} exitosa.`);
           }
       } catch (error: any) {
-          if (error.name !== 'NotFoundError' && error.name !== 'AbortError') {
-              alert(`Error al conectar: ${error.message}`);
+          if (error.name === 'NotFoundError') {
+              // El usuario canceló o no se encontró nada
+              return;
+          }
+          if (error.name === 'SecurityError') {
+              alert("⚠️ Error de seguridad: El escaneo Bluetooth fue bloqueado por el navegador.");
+          } else {
+              alert(`Error al buscar: ${error.message}\n\nRecuerda tener el Bluetooth y la UBICACIÓN encendidos.`);
           }
       }
   };
@@ -235,11 +261,23 @@ const Configuration: React.FC = () => {
                   </div>
                   <div>
                       <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Periféricos y Hardware</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Conexiones Locales</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Conexiones Bluetooth</p>
                   </div>
               </div>
 
               <div className="space-y-4">
+                  {/* Requisitos Móviles */}
+                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-2">
+                    <p className="text-[10px] font-black text-blue-800 uppercase tracking-widest flex items-center gap-2">
+                        <AlertCircle size={14}/> Requisitos para Móviles
+                    </p>
+                    <ul className="text-[9px] text-blue-600 font-bold space-y-1 uppercase">
+                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> Activar Bluetooth en el dispositivo</li>
+                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> Activar GPS / UBICACIÓN (Obligatorio en Android)</li>
+                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> Usar Navegador Chrome o Edge</li>
+                    </ul>
+                  </div>
+
                   {/* Impresora */}
                   <div className={`p-5 rounded-3xl border-2 transition-all flex items-center justify-between ${config.printerConnected ? 'border-emerald-100 bg-emerald-50/30' : 'border-slate-100 bg-slate-50/30'}`}>
                       <div className="flex items-center gap-4">
@@ -253,9 +291,9 @@ const Configuration: React.FC = () => {
                       </div>
                       <button 
                         onClick={() => config.printerConnected ? disconnectDevice('PRINTER') : startNativeConnect('PRINTER')}
-                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${config.printerConnected ? 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-100' : 'bg-blue-900 text-white hover:bg-blue-800'}`}
+                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${config.printerConnected ? 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-100' : 'bg-blue-900 text-white hover:bg-blue-800 shadow-md active:scale-95'}`}
                       >
-                        {config.printerConnected ? 'Desconectar' : 'Vincular Bluetooth'}
+                        {config.printerConnected ? 'Desconectar' : 'Buscar Impresora'}
                       </button>
                   </div>
 
@@ -272,16 +310,22 @@ const Configuration: React.FC = () => {
                       </div>
                       <button 
                         onClick={() => config.scaleConnected ? disconnectDevice('SCALE_BT') : startNativeConnect('SCALE_BT')}
-                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${config.scaleConnected ? 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-100' : 'bg-blue-900 text-white hover:bg-blue-800'}`}
+                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${config.scaleConnected ? 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-100' : 'bg-blue-900 text-white hover:bg-blue-800 shadow-md active:scale-95'}`}
                       >
-                        {config.scaleConnected ? 'Desconectar' : 'Vincular Bluetooth'}
+                        {config.scaleConnected ? 'Desconectar' : 'Buscar Balanza'}
                       </button>
                   </div>
 
                   {!browserSupport.bluetooth && (
-                      <div className="p-4 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 text-[9px] font-bold flex items-center gap-3">
-                          <BluetoothOff size={16} />
-                          SU NAVEGADOR NO SOPORTA WEB BLUETOOTH. USE CHROME O EDGE BAJO HTTPS.
+                      <div className="p-4 bg-red-50 text-red-700 rounded-2xl border border-red-100 text-[9px] font-black flex items-center gap-3 uppercase">
+                          <BluetoothOff size={16} className="shrink-0" />
+                          Tu navegador no tiene acceso al Bluetooth. Intenta con Chrome.
+                      </div>
+                  )}
+                  {!browserSupport.secure && (
+                      <div className="p-4 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 text-[9px] font-black flex items-center gap-3 uppercase">
+                          <AlertCircle size={16} className="shrink-0" />
+                          Sitio no seguro (No HTTPS). El Bluetooth está bloqueado.
                       </div>
                   )}
               </div>
