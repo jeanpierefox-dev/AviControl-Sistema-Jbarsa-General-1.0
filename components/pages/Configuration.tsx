@@ -5,7 +5,7 @@ import { getConfig, saveConfig, resetApp, isFirebaseConfigured, validateConfig, 
 import { 
   Save, Check, Cloud, X, Loader2, Database, Key, Search, Cpu, Smartphone, Link, 
   Upload, Image as ImageIcon, Globe, ServerCrash, ClipboardCheck, ExternalLink, 
-  HelpCircle, MessageSquare, Box, Layout, Trash2, Flame, Printer, Scale, Bluetooth, BluetoothOff, AlertCircle, MapPin, Apple, Share
+  HelpCircle, MessageSquare, Box, Layout, Trash2, Flame, Printer, Scale, Bluetooth, BluetoothOff, AlertCircle, MapPin
 } from 'lucide-react';
 import { AuthContext } from '../../App';
 
@@ -23,8 +23,7 @@ const Configuration: React.FC = () => {
     serial: false, 
     bluetooth: false, 
     secure: window.isSecureContext,
-    isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream,
-    isSafari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
   });
   
   const [manualForm, setManualForm] = useState({
@@ -45,8 +44,7 @@ const Configuration: React.FC = () => {
           serial: 'serial' in navigator,
           bluetooth: 'bluetooth' in navigator,
           secure: window.isSecureContext,
-          isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream,
-          isSafari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+          isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
       });
 
       if (config.firebaseConfig) {
@@ -117,11 +115,7 @@ const Configuration: React.FC = () => {
   const startNativeConnect = async (type: 'PRINTER' | 'SCALE_BT') => {
       try {
           if (!browserSupport.bluetooth) {
-              if (browserSupport.isSafari) {
-                  alert("🍎 Estás usando SAFARI:\n\nApple bloquea el Bluetooth en Safari. Para imprimir, el sistema generará un ticket PDF que podrás enviar a tu impresora mediante la opción 'Compartir' o 'Imprimir' nativa de tu iPhone.");
-              } else {
-                  alert("❌ Bluetooth no soportado en este navegador.");
-              }
+              alert("❌ Bluetooth no soportado en este navegador.\n\nSi estás en iPhone/iPad, usa el navegador 'Bluefy'.\nSi estás en Android, usa Chrome con la ubicación encendida.");
               return;
           }
 
@@ -153,7 +147,6 @@ const Configuration: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-fade-in">
-      {/* IDENTIDAD */}
       <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 text-left">
               <div className="flex-1 w-full space-y-6">
@@ -162,13 +155,13 @@ const Configuration: React.FC = () => {
                         <Layout size={24} fill="currentColor" />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Configuración General</h2>
-                        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Personalización del Sistema</p>
+                        <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Identidad del Sistema</h2>
+                        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Personalización Global</p>
                     </div>
                   </div>
                   <div className="space-y-4">
                       <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block px-1">Nombre de Empresa</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block px-1">Nombre de la Aplicación</label>
                         <input value={config.companyName} onChange={e => setConfig({...config, companyName: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-slate-900 outline-none focus:border-blue-500 transition-all shadow-inner" />
                       </div>
                       <button onClick={handleSave} className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center transition-all shadow-md ${saved ? 'bg-emerald-600 text-white' : 'bg-blue-950 text-white hover:bg-blue-900'}`}>
@@ -184,7 +177,7 @@ const Configuration: React.FC = () => {
                       ) : (
                           <div className="flex flex-col items-center text-slate-300">
                               <ImageIcon size={48} className="mb-2 opacity-40"/>
-                              <span className="text-[10px] font-black uppercase text-blue-600">Logo</span>
+                              <span className="text-[10px] font-black uppercase text-blue-600">Subir Logo</span>
                           </div>
                       )}
                       <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={(e) => {
@@ -201,69 +194,46 @@ const Configuration: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          {/* HARDWARE */}
           <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm text-left h-full">
               <div className="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
                   <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg">
                       <Cpu size={24} />
                   </div>
                   <div>
-                      <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Hardware y Balanzas</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Conexiones Locales</p>
+                      <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Hardware y Periféricos</h3>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Conexiones Bluetooth</p>
                   </div>
               </div>
 
               <div className="space-y-4">
-                  {browserSupport.isSafari && (
-                      <div className="p-5 bg-blue-50 border-2 border-blue-100 rounded-3xl space-y-3">
-                          <div className="flex items-center gap-3">
-                              <Apple size={24} className="text-blue-600"/>
-                              <p className="text-[10px] font-black uppercase text-blue-900 tracking-widest">Modo Safari Activo</p>
+                  <div className={`p-5 rounded-3xl border-2 transition-all flex items-center justify-between ${config.printerConnected ? 'border-emerald-100 bg-emerald-50/30' : 'border-slate-100 bg-slate-50/30'}`}>
+                      <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-xl ${config.printerConnected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}><Printer size={20} /></div>
+                          <div>
+                              <p className="font-black text-xs text-slate-900 uppercase">Impresora</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">{config.printerConnected ? 'Conectada' : 'No Vinculada'}</p>
                           </div>
-                          <p className="text-[10px] font-bold text-blue-700 leading-relaxed uppercase">
-                              Debido a las políticas de Apple, el Bluetooth directo no está disponible en Safari.
-                              <br/><br/>
-                              <span className="font-black">✓ IMPRESIÓN:</span> Se generará un ticket PDF para AirPrint.
-                              <br/>
-                              <span className="font-black">✓ PESAJE:</span> Usa el teclado numérico de alta velocidad en la estación.
-                          </p>
                       </div>
-                  )}
+                      <button onClick={() => config.printerConnected ? disconnectDevice('PRINTER') : startNativeConnect('PRINTER')} className="bg-blue-900 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase">
+                          {config.printerConnected ? 'Soltar' : 'Vincular'}
+                      </button>
+                  </div>
 
-                  {/* Botones de Hardware (Solo si no es Safari o si tiene soporte) */}
-                  {(!browserSupport.isSafari || browserSupport.bluetooth) && (
-                      <>
-                        <div className={`p-5 rounded-3xl border-2 transition-all flex items-center justify-between ${config.printerConnected ? 'border-emerald-100 bg-emerald-50/30' : 'border-slate-100 bg-slate-50/30'}`}>
-                            <div className="flex items-center gap-4">
-                                <div className={`p-3 rounded-xl ${config.printerConnected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}><Printer size={20} /></div>
-                                <div>
-                                    <p className="font-black text-xs text-slate-900 uppercase">Impresora</p>
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase">{config.printerConnected ? 'Conectada' : 'No Vinculada'}</p>
-                                </div>
-                            </div>
-                            <button onClick={() => config.printerConnected ? disconnectDevice('PRINTER') : startNativeConnect('PRINTER')} className="bg-blue-900 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase">
-                                {config.printerConnected ? 'Soltar' : 'Vincular'}
-                            </button>
-                        </div>
-
-                        <div className={`p-5 rounded-3xl border-2 transition-all flex items-center justify-between ${config.scaleConnected ? 'border-blue-100 bg-blue-50/30' : 'border-slate-100 bg-slate-50/30'}`}>
-                            <div className="flex items-center gap-4">
-                                <div className={`p-3 rounded-xl ${config.scaleConnected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-400'}`}><Scale size={20} /></div>
-                                <div>
-                                    <p className="font-black text-xs text-slate-900 uppercase">Balanza BT</p>
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase">{config.scaleConnected ? 'Conectada' : 'No Vinculada'}</p>
-                                </div>
-                            </div>
-                            <button onClick={() => config.scaleConnected ? disconnectDevice('SCALE_BT') : startNativeConnect('SCALE_BT')} className="bg-blue-900 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase">
-                                {config.scaleConnected ? 'Soltar' : 'Vincular'}
-                            </button>
-                        </div>
-                      </>
-                  )}
+                  <div className={`p-5 rounded-3xl border-2 transition-all flex items-center justify-between ${config.scaleConnected ? 'border-blue-100 bg-blue-50/30' : 'border-slate-100 bg-slate-50/30'}`}>
+                      <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-xl ${config.scaleConnected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-400'}`}><Scale size={20} /></div>
+                          <div>
+                              <p className="font-black text-xs text-slate-900 uppercase">Balanza BT</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">{config.scaleConnected ? 'Conectada' : 'No Vinculada'}</p>
+                          </div>
+                      </div>
+                      <button onClick={() => config.scaleConnected ? disconnectDevice('SCALE_BT') : startNativeConnect('SCALE_BT')} className="bg-blue-900 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase">
+                          {config.scaleConnected ? 'Soltar' : 'Vincular'}
+                      </button>
+                  </div>
               </div>
           </div>
 
-          {/* CLOUD */}
           <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm text-left h-full">
               <div className="flex items-center justify-between mb-8 border-b border-slate-100 pb-6">
                   <div className="flex items-center gap-3">
@@ -292,7 +262,6 @@ const Configuration: React.FC = () => {
                       <button onClick={handleUploadData} disabled={isUploading} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2">
                         {isUploading ? <Loader2 size={16} className="animate-spin"/> : <Upload size={16}/>} Subir Local a Nube
                       </button>
-                      <button onClick={() => { if(confirm('¿Desvincular?')) { saveConfig({...config, firebaseConfig: undefined}); window.location.reload(); } }} className="text-red-600 text-[10px] font-black uppercase">Desvincular Servidor</button>
                   </div>
               )}
           </div>
