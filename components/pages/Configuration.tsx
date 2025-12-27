@@ -5,7 +5,7 @@ import { getConfig, saveConfig, resetApp, isFirebaseConfigured, validateConfig, 
 import { 
   Save, Check, Cloud, X, Loader2, Database, Key, Search, Cpu, Smartphone, Link, 
   Upload, Image as ImageIcon, Globe, ServerCrash, ClipboardCheck, ExternalLink, 
-  HelpCircle, MessageSquare, Box, Layout, Trash2, Flame, Printer, Scale, Bluetooth, BluetoothOff, AlertCircle, MapPin
+  HelpCircle, MessageSquare, Box, Layout, Trash2, Flame, Printer, Scale, Bluetooth, BluetoothOff, AlertCircle, MapPin, Apple
 } from 'lucide-react';
 import { AuthContext } from '../../App';
 
@@ -22,7 +22,8 @@ const Configuration: React.FC = () => {
   const [browserSupport, setBrowserSupport] = useState({ 
     serial: false, 
     bluetooth: false, 
-    secure: window.isSecureContext 
+    secure: window.isSecureContext,
+    isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
   });
   
   const [manualForm, setManualForm] = useState({
@@ -42,7 +43,8 @@ const Configuration: React.FC = () => {
       setBrowserSupport({
           serial: 'serial' in navigator,
           bluetooth: 'bluetooth' in navigator,
-          secure: window.isSecureContext
+          secure: window.isSecureContext,
+          isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
       });
 
       if (config.firebaseConfig) {
@@ -121,26 +123,28 @@ const Configuration: React.FC = () => {
   const startNativeConnect = async (type: 'PRINTER' | 'SCALE_BT') => {
       try {
           if (!browserSupport.bluetooth) {
-              alert("❌ Tu navegador o dispositivo no soporta Bluetooth Web.\n\nEn iOS (iPhone) usa navegadores como Bluefy o WebBLE.\nEn Android usa Chrome y activa la UBICACIÓN.");
+              if (browserSupport.isIOS) {
+                  alert("🍎 iOS detectado: Safari y Chrome en iPhone NO soportan Bluetooth Web.\n\nSOLUCIÓN: Descarga el navegador 'Bluefy' desde la App Store y abre este sistema desde ahí para conectar tus equipos.");
+              } else {
+                  alert("❌ Tu navegador o dispositivo no soporta Bluetooth Web.\n\nEn Android usa Chrome y activa la UBICACIÓN.");
+              }
               return;
           }
 
           if (!browserSupport.secure) {
-              alert("❌ Bluetooth requiere una conexión segura (HTTPS).\nPor favor, accede mediante una URL segura.");
+              alert("❌ Bluetooth requiere una conexión segura (HTTPS).");
               return;
           }
           
-          // Solicitar permiso de ubicación preventivamente (ayuda en algunos Android)
           if ('geolocation' in navigator) {
-             try { await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 2000 })); } catch(e) { console.warn("Location check failed, continuing anyway"); }
+             try { await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 2000 })); } catch(e) { console.warn("Location check failed"); }
           }
 
-          // Intentar abrir el selector de dispositivos del sistema
           const device = await (navigator as any).bluetooth.requestDevice({
               acceptAllDevices: true,
               optionalServices: [
-                  '000018f0-0000-1000-8000-00805f9b34fb', // Servicio Genérico de Impresoras Térmicas
-                  '00001101-0000-1000-8000-00805f9b34fb', // Serial Port Profile (SPP)
+                  '000018f0-0000-1000-8000-00805f9b34fb',
+                  '00001101-0000-1000-8000-00805f9b34fb',
                   'battery_service'
               ]
           });
@@ -158,15 +162,8 @@ const Configuration: React.FC = () => {
               alert(`✅ Vinculación con ${device.name || 'Dispositivo'} exitosa.`);
           }
       } catch (error: any) {
-          if (error.name === 'NotFoundError') {
-              // El usuario canceló o no se encontró nada
-              return;
-          }
-          if (error.name === 'SecurityError') {
-              alert("⚠️ Error de seguridad: El escaneo Bluetooth fue bloqueado por el navegador.");
-          } else {
-              alert(`Error al buscar: ${error.message}\n\nRecuerda tener el Bluetooth y la UBICACIÓN encendidos.`);
-          }
+          if (error.name === 'NotFoundError') return;
+          alert(`Error al buscar: ${error.message}`);
       }
   };
 
@@ -266,15 +263,36 @@ const Configuration: React.FC = () => {
               </div>
 
               <div className="space-y-4">
+                  {/* ALERTA IOS ESPECÍFICA */}
+                  {browserSupport.isIOS && !browserSupport.bluetooth && (
+                      <div className="p-5 bg-blue-950 text-white rounded-[2rem] shadow-xl border-t-4 border-blue-600 space-y-3">
+                        <div className="flex items-center gap-3">
+                            <Apple size={24} className="text-blue-400"/>
+                            <p className="text-[10px] font-black uppercase tracking-widest">Solución para iPhone / iPad</p>
+                        </div>
+                        <p className="text-[10px] font-bold text-blue-200 leading-relaxed uppercase">
+                           Safari NO soporta Bluetooth. Para conectar balanzas e impresoras, usa el navegador gratuito <span className="text-blue-400 font-black underline">BLUEFY</span> de la App Store.
+                        </p>
+                        <a 
+                            href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="w-full flex items-center justify-center gap-2 bg-blue-600 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-500 transition-all"
+                        >
+                            <ExternalLink size={14}/> Ir a App Store
+                        </a>
+                      </div>
+                  )}
+
                   {/* Requisitos Móviles */}
                   <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-2">
                     <p className="text-[10px] font-black text-blue-800 uppercase tracking-widest flex items-center gap-2">
                         <AlertCircle size={14}/> Requisitos para Móviles
                     </p>
                     <ul className="text-[9px] text-blue-600 font-bold space-y-1 uppercase">
-                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> Activar Bluetooth en el dispositivo</li>
-                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> Activar GPS / UBICACIÓN (Obligatorio en Android)</li>
-                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> Usar Navegador Chrome o Edge</li>
+                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> Bluetooth encendido</li>
+                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> GPS / UBICACIÓN (Obligatorio en Android)</li>
+                        <li className="flex items-center gap-2"><div className="w-1 h-1 bg-blue-600 rounded-full"/> HTTPS habilitado</li>
                     </ul>
                   </div>
 
@@ -315,19 +333,6 @@ const Configuration: React.FC = () => {
                         {config.scaleConnected ? 'Desconectar' : 'Buscar Balanza'}
                       </button>
                   </div>
-
-                  {!browserSupport.bluetooth && (
-                      <div className="p-4 bg-red-50 text-red-700 rounded-2xl border border-red-100 text-[9px] font-black flex items-center gap-3 uppercase">
-                          <BluetoothOff size={16} className="shrink-0" />
-                          Tu navegador no tiene acceso al Bluetooth. Intenta con Chrome.
-                      </div>
-                  )}
-                  {!browserSupport.secure && (
-                      <div className="p-4 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 text-[9px] font-black flex items-center gap-3 uppercase">
-                          <AlertCircle size={16} className="shrink-0" />
-                          Sitio no seguro (No HTTPS). El Bluetooth está bloqueado.
-                      </div>
-                  )}
               </div>
           </div>
 
@@ -359,7 +364,7 @@ const Configuration: React.FC = () => {
                       <div className="bg-slate-50 border-2 border-slate-100 p-4 rounded-2xl flex items-center gap-4">
                           <HelpCircle size={20} className="text-blue-500 shrink-0"/>
                           <p className="text-[10px] text-slate-500 font-medium leading-tight">
-                             Configure Firebase para habilitar respaldo en tiempo real y multi-dispositivo.
+                             Configure Firebase para habilitar respaldo en tiempo real.
                           </p>
                       </div>
 
@@ -435,11 +440,11 @@ const Configuration: React.FC = () => {
               <div className="text-center md:text-left">
                   <p className="font-black text-red-800 text-sm uppercase tracking-tight">Restablecimiento de Fábrica</p>
                   <p className="text-[10px] text-red-600 font-medium leading-relaxed mt-1">
-                      Esto eliminará todos los datos de pesaje, clientes, lotes y configuración local de este dispositivo de forma irreversible.
+                      Esto eliminará todos los datos de pesaje, clientes, lotes y configuración local de este dispositivo.
                   </p>
               </div>
               <button 
-                onClick={() => { if(confirm('¿ESTÁ ABSOLUTAMENTE SEGURO? Esta acción no se puede deshacer y borrará toda la base de datos local.')) resetApp(); }} 
+                onClick={() => { if(confirm('¿BORRAR TODO?')) resetApp(); }} 
                 className="bg-red-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-200 active:scale-95 flex items-center gap-2"
               >
                 <Flame size={18} /> Borrar Todo
