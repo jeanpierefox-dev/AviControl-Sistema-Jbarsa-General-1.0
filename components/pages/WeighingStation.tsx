@@ -7,7 +7,7 @@ import {
   ArrowLeft, Save, DollarSign, X, Eye, Package, PackageOpen, 
   RotateCcw, User, Edit2, Trash2, 
   Scale, Box, UserPlus, Bird, Printer, Receipt, CreditCard, Wallet,
-  Clock, FileText
+  Clock, FileText, ChevronRight, Apple
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -37,6 +37,7 @@ const WeighingStation: React.FC = () => {
   const [qtyInput, setQtyInput] = useState('');
   const [activeTab, setActiveTab] = useState<'FULL' | 'EMPTY' | 'MORTALITY'>('FULL');
   const weightInputRef = useRef<HTMLInputElement>(null);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
   // Payment State
   const [pricePerKg, setPricePerKg] = useState<number | string>('');
@@ -51,7 +52,7 @@ const WeighingStation: React.FC = () => {
 
   useEffect(() => {
     setDefaultQuantity();
-    setTimeout(() => weightInputRef.current?.focus(), 100);
+    if (!isSafari) setTimeout(() => weightInputRef.current?.focus(), 100);
   }, [activeTab, activeOrder]);
 
   const loadOrders = () => {
@@ -69,11 +70,9 @@ const WeighingStation: React.FC = () => {
   };
 
   const setDefaultQuantity = () => {
-    if (mode === WeighingType.SOLO_POLLO) {
-        setQtyInput('10'); 
-    } else if (mode === WeighingType.SOLO_JABAS) {
-        setQtyInput('1'); 
-    } else {
+    if (mode === WeighingType.SOLO_POLLO) setQtyInput('10'); 
+    else if (mode === WeighingType.SOLO_JABAS) setQtyInput('1'); 
+    else {
       if (activeTab === 'FULL') setQtyInput(config.defaultFullCrateBatch.toString());
       if (activeTab === 'EMPTY') setQtyInput('10'); 
       if (activeTab === 'MORTALITY') setQtyInput('1');
@@ -96,25 +95,14 @@ const WeighingStation: React.FC = () => {
   const handleSaveClient = () => {
     if (!newClientName || !targetCrates) return;
     const target = parseInt(targetCrates);
-
     if (editingOrderId) {
       const existing = getOrders().find(o => o.id === editingOrderId);
-      if (existing) {
-        saveOrder({ ...existing, clientName: newClientName, targetCrates: target });
-      }
+      if (existing) saveOrder({ ...existing, clientName: newClientName, targetCrates: target });
     } else {
       const newOrder: ClientOrder = {
-        id: Date.now().toString(),
-        clientName: newClientName,
-        targetCrates: target,
-        pricePerKg: 0,
-        status: 'OPEN',
-        records: [],
-        batchId,
-        weighingMode: mode as WeighingType,
-        paymentStatus: 'PENDING',
-        payments: [],
-        createdBy: user?.id
+        id: Date.now().toString(), clientName: newClientName, targetCrates: target,
+        pricePerKg: 0, status: 'OPEN', records: [], batchId, weighingMode: mode as WeighingType,
+        paymentStatus: 'PENDING', payments: [], createdBy: user?.id
       };
       saveOrder(newOrder);
     }
@@ -134,432 +122,98 @@ const WeighingStation: React.FC = () => {
     const qM = mort.reduce((a, b) => a + b.quantity, 0);
     const net = order.weighingMode === WeighingType.SOLO_POLLO ? wF : wF - wE - wM;
     const est = mode === WeighingType.SOLO_POLLO ? qF : qF * 9;
-    return { wF, wE, wM, qF, qE, qM, net, est, avg: est > 0 ? net / est : 0 };
+    return { wF, wE, wM, qF, qE, qM, net, est };
   };
 
   const addWeight = () => {
     if (!activeOrder || !weightInput || !qtyInput) return;
-    const totals = getTotals(activeOrder);
-    const target = activeOrder.targetCrates || Infinity;
-
-    if (activeTab === 'FULL' && totals.qF >= target) {
-      alert(`⚠️ Límite de jabas LLENAS (${target}) alcanzado.`);
-      return;
-    }
-    if (activeTab === 'EMPTY' && totals.qE >= target) {
-      alert(`⚠️ Límite de jabas VACÍAS (Tara: ${target}) alcanzado.`);
-      return;
-    }
-
     const record: WeighingRecord = {
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      weight: parseFloat(weightInput),
-      quantity: parseInt(qtyInput),
-      type: activeTab
+      id: Date.now().toString(), timestamp: Date.now(), weight: parseFloat(weightInput),
+      quantity: parseInt(qtyInput), type: activeTab
     };
-    
     const updated = { ...activeOrder, records: [record, ...activeOrder.records] };
     saveOrder(updated);
     setActiveOrder(updated);
     setWeightInput('');
-    weightInputRef.current?.focus();
+    if (!isSafari) weightInputRef.current?.focus();
   };
 
   const deleteRecord = (id: string) => {
-    if(!confirm('¿Eliminar registro de pesada?')) return;
+    if(!confirm('¿Eliminar?')) return;
     const updated = { ...activeOrder!, records: activeOrder!.records.filter(r => r.id !== id) };
     saveOrder(updated);
     setActiveOrder(updated);
   };
 
-  // Helper para manejar la salida del PDF en móviles y escritorio
   const handlePDFOutput = (doc: jsPDF, filename: string) => {
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile) {
-      const blob = doc.output('blob');
-      const url = URL.createObjectURL(blob);
-      const newWindow = window.open(url, '_blank');
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-          // Si el popup es bloqueado, intentamos redirigir la ubicación actual
-          window.location.href = url;
-      }
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    // En Safari, navegar directamente al blob suele evitar el bloqueo de pop-ups
+    if (isSafari) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.click();
     } else {
-      doc.save(filename);
+      window.open(url, '_blank');
     }
   };
 
   const generateTicketPDF = (order: ClientOrder) => {
     const t = getTotals(order);
-    const doc = new jsPDF({ unit: 'mm', format: [80, 200] });
-    const price = order.pricePerKg || 0;
-    const total = t.net * price;
-
-    doc.setFont("helvetica", "bold").setFontSize(14);
+    const doc = new jsPDF({ unit: 'mm', format: [80, 150] });
+    doc.setFontSize(14).setFont("helvetica", "bold");
     doc.text(config.companyName.toUpperCase(), 40, 10, { align: 'center' });
-    
-    doc.setFontSize(8).setFont("helvetica", "normal").setTextColor(100);
-    doc.text("TICKET DE VENTA / CARGA", 40, 15, { align: 'center' });
-    doc.text(`${new Date().toLocaleString()}`, 40, 19, { align: 'center' });
-
-    doc.setDrawColor(0).setLineWidth(0.5);
+    doc.setFontSize(8).setFont("helvetica", "normal");
+    doc.text("TICKET DE CARGA", 40, 15, { align: 'center' });
+    doc.text(new Date().toLocaleString(), 40, 19, { align: 'center' });
     doc.line(5, 22, 75, 22);
-
-    doc.setFontSize(10).setTextColor(0).setFont("helvetica", "bold");
-    doc.text("CLIENTE:", 5, 28);
-    doc.setFont("helvetica", "normal");
-    doc.text(order.clientName.toUpperCase(), 5, 33);
-
-    doc.rect(5, 38, 70, 52); 
-    doc.setFont("helvetica", "bold");
-    doc.text("RESUMEN DE OPERACIÓN", 40, 44, { align: 'center' });
-    doc.line(5, 46, 75, 46);
-
-    doc.setFontSize(9).setFont("helvetica", "normal");
-    doc.text(`Peso Bruto Total:`, 7, 52);
-    doc.text(`${t.wF.toFixed(2)} kg`, 73, 52, { align: 'right' });
-    
-    doc.text(`Peso Tara Total:`, 7, 57);
-    doc.text(`- ${t.wE.toFixed(2)} kg`, 73, 57, { align: 'right' });
-    
-    doc.text(`Merma/Mort. Total:`, 7, 62);
-    doc.text(`- ${t.wM.toFixed(2)} kg`, 73, 62, { align: 'right' });
-
-    doc.line(10, 65, 70, 65);
-    
-    doc.setFontSize(11).setFont("helvetica", "bold");
-    doc.text(`PESO NETO:`, 7, 72);
-    doc.text(`${t.net.toFixed(2)} kg`, 73, 72, { align: 'right' });
-
-    doc.setFontSize(9).setFont("helvetica", "normal");
-    doc.text(`Precio x Kg:`, 7, 78);
-    doc.text(`S/. ${price.toFixed(2)}`, 73, 78, { align: 'right' });
-
-    doc.setFontSize(12).setFont("helvetica", "bold");
-    doc.setTextColor(0, 100, 0); 
-    doc.text(`TOTAL A PAGAR:`, 7, 85);
-    doc.text(`S/. ${total.toFixed(2)}`, 73, 85, { align: 'right' });
-    doc.setTextColor(0);
-
-    doc.setFontSize(8).setFont("helvetica", "normal").setTextColor(100);
-    doc.text(`Método de Pago: ${order.paymentStatus === 'PAID' ? 'CONTADO' : 'CRÉDITO'}`, 5, 95);
-    
-    doc.text("Gracias por su preferencia", 40, 110, { align: 'center' });
-
-    handlePDFOutput(doc, `Ticket_${order.clientName}_${Date.now()}.pdf`);
+    doc.setFontSize(10).text(`CLIENTE: ${order.clientName.toUpperCase()}`, 5, 28);
+    doc.rect(5, 33, 70, 35);
+    doc.text(`BRUTO: ${t.wF.toFixed(2)} kg`, 10, 42);
+    doc.text(`TARA: -${t.wE.toFixed(2)} kg`, 10, 48);
+    doc.text(`MERMA: -${t.wM.toFixed(2)} kg`, 10, 54);
+    doc.setFontSize(12).setFont("helvetica", "bold").text(`NETO: ${t.net.toFixed(2)} kg`, 10, 63);
+    doc.setFontSize(9).text(`TOTAL: S/. ${(t.net * order.pricePerKg).toFixed(2)}`, 5, 75);
+    doc.text("Gracias por su preferencia", 40, 100, { align: 'center' });
+    handlePDFOutput(doc, `Ticket_${order.id}.pdf`);
   };
 
-  const generateTicketGridData = (records: WeighingRecord[], cols: number) => {
-    const rows = [];
-    for (let i = 0; i < records.length; i += cols) {
-      const row = [];
-      for (let j = 0; j < cols; j++) {
-        const r = records[i + j];
-        if (r) {
-          row.push(`${r.quantity}`);
-          row.push(`${r.weight.toFixed(1)}`);
-        } else {
-          row.push('');
-          row.push('');
-        }
-      }
-      rows.push(row);
-    }
-    return rows;
-  };
-
-  const generateDetailedTicketPDF = (order: ClientOrder) => {
-    const t = getTotals(order);
-    const doc = new jsPDF({ unit: 'mm', format: [80, 400] }); 
-    const company = config.companyName.toUpperCase();
-
-    doc.setFont("helvetica", "bold").setFontSize(11);
-    doc.text(company, 40, 10, { align: 'center' });
-    
-    doc.setFontSize(7).setFont("helvetica", "normal");
-    doc.text("REPORTE DETALLADO (FORMATO COMPACTO)", 40, 14, { align: 'center' });
-    doc.text(`${new Date().toLocaleString()}`, 40, 17, { align: 'center' });
-
-    doc.line(5, 19, 75, 19);
-
-    doc.setFontSize(9).setFont("helvetica", "bold");
-    doc.text("CLIENTE:", 5, 24);
-    doc.setFont("helvetica", "normal").setFontSize(8);
-    doc.text(order.clientName.toUpperCase(), 5, 28);
-
-    const fullRecs = order.records.filter(r => r.type === 'FULL').sort((a,b) => a.timestamp - b.timestamp);
-    const emptyRecs = order.records.filter(r => r.type === 'EMPTY').sort((a,b) => a.timestamp - b.timestamp);
-    const mortRecs = order.records.filter(r => r.type === 'MORTALITY').sort((a,b) => a.timestamp - b.timestamp);
-
-    let currentY = 32;
-
-    if (fullRecs.length > 0) {
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      doc.text("1. PESADAS BRUTAS (LLENAS)", 5, currentY);
-      autoTable(doc, {
-        startY: currentY + 2,
-        margin: { left: 5, right: 5 },
-        head: [['C.', 'Kg', 'C.', 'Kg']],
-        body: generateTicketGridData(fullRecs, 2),
-        theme: 'grid',
-        styles: { fontSize: 6, cellPadding: 0.8, halign: 'center' },
-        headStyles: { fillColor: [30, 41, 59], fontSize: 6 }
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 6;
-    }
-
-    if (emptyRecs.length > 0) {
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      doc.text("2. TARA (VACÍAS)", 5, currentY);
-      autoTable(doc, {
-        startY: currentY + 2,
-        margin: { left: 5, right: 5 },
-        head: [['C.', 'Kg', 'C.', 'Kg']],
-        body: generateTicketGridData(emptyRecs, 2),
-        theme: 'grid',
-        styles: { fontSize: 6, cellPadding: 0.8, halign: 'center' },
-        headStyles: { fillColor: [71, 85, 105], fontSize: 6 }
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 6;
-    }
-
-    if (mortRecs.length > 0) {
-      doc.setFont("helvetica", "bold").setFontSize(8);
-      doc.text("3. MERMA / MORTALIDAD", 5, currentY);
-      autoTable(doc, {
-        startY: currentY + 2,
-        margin: { left: 5, right: 5 },
-        head: [['C.', 'Kg', 'C.', 'Kg']],
-        body: generateTicketGridData(mortRecs, 2),
-        theme: 'grid',
-        styles: { fontSize: 6, cellPadding: 0.8, halign: 'center' },
-        headStyles: { fillColor: [153, 27, 27], fontSize: 6 }
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 6;
-    }
-
-    doc.line(5, currentY, 75, currentY);
-    currentY += 5;
-    doc.setFontSize(9).setFont("helvetica", "bold");
-    doc.text("PESO NETO TOTAL:", 5, currentY);
-    doc.text(`${t.net.toFixed(2)} kg`, 75, currentY, { align: 'right' });
-    
-    doc.setFontSize(7).setFont("helvetica", "normal");
-    doc.text("Fin del Ticket Detallado", 40, currentY + 8, { align: 'center' });
-
-    handlePDFOutput(doc, `Detalle_Ticket_${order.clientName}_${Date.now()}.pdf`);
-  };
-
-  const generateReportPDF = () => {
-    if (!activeOrder) return;
-    const t = getTotals(activeOrder);
-    const doc = new jsPDF();
-    const company = config.companyName.toUpperCase();
-
-    doc.setFont("helvetica", "bold").setFontSize(14);
-    doc.text(company, 105, 12, { align: 'center' });
-    
-    doc.setFontSize(10).setFont("helvetica", "normal");
-    doc.text("REPORTE OPERATIVO DETALLADO", 105, 18, { align: 'center' });
-    doc.setFontSize(9);
-    doc.text(`Cliente: ${activeOrder.clientName} | Fecha: ${new Date().toLocaleString()}`, 105, 23, { align: 'center' });
-
-    autoTable(doc, {
-      startY: 28,
-      margin: { left: 14, right: 14 },
-      head: [['Concepto', 'Cant.', 'Peso Total (kg)']],
-      body: [
-        ['Bruto (Llenas)', `${t.qF} Jabas`, t.wF.toFixed(2)],
-        ['Tara (Vacías)', `${t.qE} Jabas`, t.wE.toFixed(2)],
-        ['Merma / Mort.', `${t.qM} Und`, t.wM.toFixed(2)],
-        [{ content: 'PESO NETO LIQUIDABLE', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }, '', { content: `${t.net.toFixed(2)} kg`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }]
-      ],
-      theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 1 },
-      headStyles: { fillColor: [23, 37, 84] }
-    });
-
-    const generateGridData = (records: WeighingRecord[], cols: number) => {
-        const rows = [];
-        for (let i = 0; i < records.length; i += cols) {
-            const row = [];
-            for (let j = 0; j < cols; j++) {
-                const r = records[i + j];
-                if (r) {
-                    row.push(r.quantity.toString());
-                    row.push(r.weight.toFixed(2));
-                } else {
-                    row.push('');
-                    row.push('');
-                }
-            }
-            rows.push(row);
-        }
-        return rows;
-    };
-
-    const fullRecs = activeOrder.records.filter(r => r.type === 'FULL').sort((a,b) => a.timestamp - b.timestamp);
-    const emptyRecs = activeOrder.records.filter(r => r.type === 'EMPTY').sort((a,b) => a.timestamp - b.timestamp);
-    const mortRecs = activeOrder.records.filter(r => r.type === 'MORTALITY').sort((a,b) => a.timestamp - b.timestamp);
-
-    doc.setFont("helvetica", "bold").setFontSize(9);
-    doc.text("1. DETALLE DE PESADAS LLENAS (BRUTO)", 14, (doc as any).lastAutoTable.finalY + 8);
-
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 11,
-      margin: { left: 14, right: 14 },
-      head: [[
-          { content: 'Bloque 1', colSpan: 2, styles: { halign: 'center' } },
-          { content: 'Bloque 2', colSpan: 2, styles: { halign: 'center' } },
-          { content: 'Bloque 3', colSpan: 2, styles: { halign: 'center' } },
-          { content: 'Bloque 4', colSpan: 2, styles: { halign: 'center' } }
-      ], ['Cant.', 'Peso', 'Cant.', 'Peso', 'Cant.', 'Peso', 'Cant.', 'Peso']],
-      body: generateGridData(fullRecs, 4),
-      theme: 'grid',
-      styles: { fontSize: 7, cellPadding: 0.5, halign: 'center' },
-      headStyles: { fillColor: [30, 41, 59], fontSize: 7 }
-    });
-
-    if (emptyRecs.length > 0) {
-        doc.setFont("helvetica", "bold").setFontSize(9);
-        doc.text("2. DETALLE DE TARA (VACÍAS)", 14, (doc as any).lastAutoTable.finalY + 8);
-        autoTable(doc, {
-            startY: (doc as any).lastAutoTable.finalY + 11,
-            margin: { left: 14, right: 14 },
-            head: [[
-                { content: 'B1', colSpan: 2, styles: { halign: 'center' } },
-                { content: 'B2', colSpan: 2, styles: { halign: 'center' } },
-                { content: 'B3', colSpan: 2, styles: { halign: 'center' } }
-            ], ['C.', 'Kg', 'C.', 'Kg', 'C.', 'Kg']],
-            body: generateGridData(emptyRecs, 3),
-            theme: 'grid',
-            styles: { fontSize: 7, cellPadding: 0.5, halign: 'center' },
-            headStyles: { fillColor: [71, 85, 105], fontSize: 7 }
-        });
-    }
-
-    if (mortRecs.length > 0) {
-        doc.setFont("helvetica", "bold").setFontSize(9);
-        doc.text("3. DETALLE DE MERMA / MORTALIDAD", 14, (doc as any).lastAutoTable.finalY + 8);
-        autoTable(doc, {
-            startY: (doc as any).lastAutoTable.finalY + 11,
-            margin: { left: 14, right: 14 },
-            head: [[
-                { content: 'B1', colSpan: 2, styles: { halign: 'center' } },
-                { content: 'B2', colSpan: 2, styles: { halign: 'center' } },
-                { content: 'B3', colSpan: 2, styles: { halign: 'center' } }
-            ], ['C.', 'Kg', 'C.', 'Kg', 'C.', 'Kg']],
-            body: generateGridData(mortRecs, 3),
-            theme: 'grid',
-            styles: { fontSize: 7, cellPadding: 0.5, halign: 'center' },
-            headStyles: { fillColor: [153, 27, 27], fontSize: 7 }
-        });
-    }
-
-    handlePDFOutput(doc, `Reporte_Detallado_${activeOrder.clientName}_${Date.now()}.pdf`);
-  };
-
+  // Fix: Implemented handlePayment to resolve 'Cannot find name handlePayment'
   const handlePayment = () => {
-    if(!activeOrder) return;
-    const t = getTotals(activeOrder);
-    const price = typeof pricePerKg === 'string' ? parseFloat(pricePerKg) : pricePerKg;
-    const total = (activeOrder.weighingMode === WeighingType.SOLO_POLLO ? t.wF : t.net) * (price || 0);
-    
-    const updated: ClientOrder = { 
-      ...activeOrder, 
-      pricePerKg: price || 0, 
-      status: 'CLOSED', 
-      paymentStatus: paymentMethod === 'CASH' ? 'PAID' : 'PENDING',
+    if (!activeOrder || !pricePerKg) return;
+    const price = parseFloat(pricePerKg.toString());
+    const updatedOrder: ClientOrder = {
+      ...activeOrder,
+      pricePerKg: price,
+      status: 'CLOSED',
       paymentMethod: paymentMethod,
-      payments: paymentMethod === 'CASH' ? [{ id: Date.now().toString(), amount: total, timestamp: Date.now(), note: 'Liquidación Final Contado' }] : []
     };
-    
-    saveOrder(updated);
-    generateTicketPDF(updated);
-    
-    setActiveOrder(null);
-    loadOrders();
+    saveOrder(updatedOrder);
+    setActiveOrder(updatedOrder);
+    generateTicketPDF(updatedOrder);
     setShowPaymentModal(false);
+    loadOrders();
   };
 
-  const handleDeleteClient = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm('¿Eliminar este cliente y todos sus registros de pesaje?')) {
-      deleteOrder(id);
-      loadOrders();
-    }
-  };
-
-  const ClientCard: React.FC<{ order: ClientOrder }> = ({ order }) => {
-    const t = getTotals(order);
-    const target = order.targetCrates || 10;
-    const isOverLimit = t.qF >= target;
-    const percent = Math.min((t.qF / target) * 100, 100);
-
+  const SafariNumpad = () => {
+    const handleKey = (val: string) => {
+        if (val === 'DEL') setWeightInput(prev => prev.slice(0, -1));
+        else if (val === '.') { if (!weightInput.includes('.')) setWeightInput(prev => prev + '.'); }
+        else setWeightInput(prev => prev + val);
+    };
     return (
-      <div 
-        onClick={() => setActiveOrder(order)} 
-        className={`bg-white rounded-2xl shadow-lg border border-slate-200 hover:shadow-2xl hover:border-blue-400 transition-all duration-300 overflow-hidden flex flex-col h-full relative group cursor-pointer ${order.status === 'CLOSED' ? 'opacity-75' : ''}`}
-      >
-          <div className="bg-slate-900 p-4 flex justify-between items-start">
-             <div className="flex items-center space-x-3 overflow-hidden">
-                 <div className="bg-blue-600 p-1.5 rounded-lg text-white shadow-lg shrink-0">
-                     <User size={14} />
-                 </div>
-                 <div className="overflow-hidden">
-                     <h3 className="font-black text-white text-xs leading-tight uppercase truncate">{order.clientName}</h3>
-                     <p className="text-slate-400 text-[8px] font-bold uppercase flex items-center mt-1">
-                         <Clock size={8} className="mr-1"/> {order.status === 'CLOSED' ? 'Liquidado' : 'Abierto'}
-                     </p>
-                 </div>
-             </div>
-             <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); handleOpenClientModal(order); }} className="bg-slate-800 p-1 rounded-lg text-slate-400 hover:text-white transition-colors"><Edit2 size={10} /></button>
-                <button onClick={(e) => { e.stopPropagation(); handleDeleteClient(e, order.id); }} className="bg-slate-800 p-1 rounded-lg text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={10} /></button>
-             </div>
-          </div>
-
-          <div className="p-4 flex-1 flex flex-col justify-between">
-              <div>
-                  <div className="mb-3">
-                      <div className="flex justify-between text-[8px] font-bold uppercase tracking-wider mb-1">
-                          <span className="text-slate-500">Avance Carga</span>
-                          <span className={`${isOverLimit ? 'text-red-600' : 'text-blue-600'}`}>{t.qF} / {target} J.</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                          <div className={`h-full rounded-full transition-all duration-500 ${isOverLimit ? 'bg-red-500' : 'bg-gradient-to-r from-blue-500 to-blue-400'}`} style={{ width: `${percent}%` }}></div>
-                      </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-1 text-center">
-                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100">
-                          <p className="text-[7px] font-bold text-slate-400 uppercase">Bruto</p>
-                          <p className="font-black text-slate-800 text-[11px] leading-none">{t.qF}</p>
-                          <p className="text-[7px] text-slate-400 font-bold mt-1">{t.wF.toFixed(1)}kg</p>
-                      </div>
-                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100">
-                          <p className="text-[7px] font-bold text-slate-400 uppercase">Tara</p>
-                          <p className="font-black text-slate-800 text-[11px] leading-none">{t.qE}</p>
-                           <p className="text-[7px] text-slate-400 font-bold mt-1">{t.wE.toFixed(1)}kg</p>
-                      </div>
-                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100">
-                          <p className="text-[7px] font-bold text-red-400 uppercase">Merma</p>
-                          <p className="font-black text-slate-800 text-[11px] leading-none">{t.qM}</p>
-                           <p className="text-[7px] text-red-400 font-bold mt-1">{t.wM.toFixed(1)}kg</p>
-                      </div>
-                  </div>
-              </div>
-
-              <div className="mt-3 pt-2 border-t border-slate-50 flex justify-between items-center">
-                  <span className={`text-[7px] font-black uppercase tracking-widest ${order.paymentStatus === 'PAID' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                    {order.paymentStatus === 'PAID' ? 'PAGADO' : 'PENDIENTE'}
-                  </span>
-                  <div className="text-blue-600 font-black text-[8px] uppercase flex items-center group-hover:translate-x-1 transition-transform">
-                    OPERAR <ArrowLeft size={10} className="ml-1 rotate-180" />
-                  </div>
-              </div>
-          </div>
-      </div>
+        <div className="grid grid-cols-3 gap-2 mt-4 bg-slate-100 p-3 rounded-3xl md:hidden">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, '.', 0, 'DEL'].map(k => (
+                <button 
+                  key={k} 
+                  onClick={() => handleKey(k.toString())}
+                  className={`h-14 rounded-2xl font-black text-xl shadow-sm active:scale-95 transition-all ${k === 'DEL' ? 'bg-red-100 text-red-600' : 'bg-white text-slate-900'}`}
+                >
+                    {k}
+                </button>
+            ))}
+        </div>
     );
   };
 
@@ -567,64 +221,45 @@ const WeighingStation: React.FC = () => {
 
   if (!activeOrder) {
     return (
-      <div className="p-2 md:p-4 max-w-7xl mx-auto">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-slate-200 pb-4">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter text-left">Gestión de Pesaje</h2>
-            <div className="flex items-center gap-2 mt-0.5">
-                <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">{mode}</span>
-                <p className="text-slate-400 text-[10px] font-medium italic">Seleccione un cliente para iniciar el registro</p>
-            </div>
+      <div className="p-2 md:p-4 max-w-7xl mx-auto animate-fade-in">
+        <div className="flex justify-between items-center mb-6 border-b border-slate-200 pb-4">
+          <div className="text-left">
+            <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Estación de Pesaje</h2>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{mode}</p>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button onClick={() => navigate('/lotes')} className="bg-white border-2 border-slate-100 p-2 rounded-xl hover:bg-slate-50 text-slate-400 shadow-sm transition-all">
-                <ArrowLeft size={16}/>
-            </button>
-            <button onClick={() => handleOpenClientModal()} className="flex-1 sm:flex-none bg-blue-950 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-blue-900 transition-all flex items-center justify-center gap-2">
-              <UserPlus size={16} /> Crear Cliente
-            </button>
-          </div>
+          <button onClick={() => handleOpenClientModal()} className="bg-blue-950 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2">
+            <UserPlus size={16} /> Nuevo Cliente
+          </button>
         </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {orders.map(o => <ClientCard key={o.id} order={o} />)}
-          {orders.length === 0 && (
-             <div className="col-span-full py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
-                <User size={48} className="mx-auto text-slate-200 mb-4"/>
-                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">No hay clientes registrados</p>
-             </div>
-          )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {orders.map(o => (
+              <div key={o.id} onClick={() => setActiveOrder(o)} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition-all cursor-pointer group text-left">
+                  <div className="flex justify-between items-start mb-4">
+                      <div className="bg-blue-600 p-2 rounded-xl text-white"><User size={20}/></div>
+                      <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${o.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                          {o.status === 'CLOSED' ? 'Cerrado' : 'Operando'}
+                      </span>
+                  </div>
+                  <h3 className="font-black text-slate-900 uppercase text-sm truncate">{o.clientName}</h3>
+                  <div className="mt-4 flex justify-between items-end">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Avance: <span className="text-slate-900">{getTotals(o).qF} J.</span></div>
+                      <ChevronRight className="text-blue-600 group-hover:translate-x-1 transition-transform" />
+                  </div>
+              </div>
+          ))}
         </div>
 
         {showClientModal && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm border border-gray-100 animate-fade-in">
-              <h3 className="text-xl font-black mb-6 text-slate-900 uppercase tracking-tighter">{editingOrderId ? 'Editar Cliente' : 'Nuevo Cliente'}</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1 px-1">Razón Social</label>
-                  <input 
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 font-bold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all"
-                    value={newClientName}
-                    onChange={e => setNewClientName(e.target.value)}
-                    placeholder="Nombre del Cliente"
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1 px-1">Meta Jabas</label>
-                  <input 
-                    type="number"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 font-bold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all"
-                    value={targetCrates}
-                    onChange={e => setTargetCrates(e.target.value)}
-                    placeholder="Cant. aproximada"
-                  />
-                </div>
+            <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm animate-scale-up">
+              <h3 className="text-xl font-black mb-6 text-slate-900 uppercase">Registro Cliente</h3>
+              <div className="space-y-4 text-left">
+                <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 font-bold outline-none focus:border-blue-600" value={newClientName} onChange={e => setNewClientName(e.target.value)} placeholder="Nombre del Cliente" />
+                <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 font-bold outline-none focus:border-blue-600" value={targetCrates} onChange={e => setTargetCrates(e.target.value)} placeholder="Meta de Jabas" />
               </div>
-              <div className="mt-8 flex justify-end space-x-3">
-                <button onClick={() => setShowClientModal(false)} className="text-slate-500 font-bold text-[10px] uppercase hover:text-slate-800 px-4 py-2 transition-colors">Cerrar</button>
-                <button onClick={handleSaveClient} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-blue-700 transition-colors">Guardar</button>
+              <div className="mt-8 flex justify-end gap-3">
+                <button onClick={() => setShowClientModal(false)} className="text-slate-400 font-black text-xs uppercase">Cerrar</button>
+                <button onClick={handleSaveClient} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-lg">Guardar</button>
               </div>
             </div>
           </div>
@@ -636,112 +271,101 @@ const WeighingStation: React.FC = () => {
   const isLocked = activeOrder.status === 'CLOSED';
 
   return (
-    <div className="flex flex-col h-full space-y-3 max-w-7xl mx-auto">
-      <div className="bg-blue-950 p-3 rounded-2xl shadow-xl text-white border-b-4 border-blue-900">
-        <div className="flex flex-col lg:flex-row justify-between items-center gap-3">
-          <div className="flex items-center gap-3 w-full lg:w-auto">
-            <button onClick={() => setActiveOrder(null)} className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-all active:scale-90"><ArrowLeft size={18}/></button>
-            <div className="overflow-hidden text-left">
-              <h2 className="text-lg font-black uppercase tracking-tighter leading-none truncate max-w-[180px] md:max-w-md">{activeOrder.clientName}</h2>
-              <p className="text-blue-300 text-[8px] font-black uppercase tracking-widest mt-1">MODO: {mode} | Lote: {activeOrder.batchId || 'Sin Lote'}</p>
+    <div className="flex flex-col h-full space-y-3 max-w-7xl mx-auto animate-fade-in">
+      <div className="bg-blue-950 p-4 rounded-3xl shadow-xl text-white">
+        <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-4 w-full lg:w-auto">
+            <button onClick={() => setActiveOrder(null)} className="p-3 bg-white/10 rounded-2xl hover:bg-white/20"><ArrowLeft size={20}/></button>
+            <div className="text-left">
+              <h2 className="text-xl font-black uppercase leading-none truncate max-w-[200px]">{activeOrder.clientName}</h2>
+              <p className="text-blue-300 text-[8px] font-black uppercase tracking-widest mt-1">
+                  {isSafari && <><Apple size={8} className="inline mr-1"/> Modo Optimizado Safari</>}
+              </p>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-1.5 flex-1 w-full text-center">
-            <div className="bg-white/5 p-1.5 rounded-xl border border-white/10">
-              <p className="text-[6px] font-black text-blue-300 uppercase">Bruto</p>
-              <p className="text-base font-black font-digital">{totals.wF.toFixed(1)}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1 w-full text-center">
+            <div className="bg-white/5 p-2 rounded-2xl border border-white/10">
+              <p className="text-[7px] font-black text-blue-300 uppercase">Bruto</p>
+              <p className="text-lg font-black font-digital">{totals.wF.toFixed(1)}</p>
             </div>
-            <div className="bg-white/5 p-1.5 rounded-xl border border-white/10">
-              <p className="text-[6px] font-black text-blue-300 uppercase">Tara</p>
-              <p className="text-base font-black font-digital text-orange-400">{totals.wE.toFixed(1)}</p>
+            <div className="bg-white/5 p-2 rounded-2xl border border-white/10">
+              <p className="text-[7px] font-black text-blue-300 uppercase">Tara</p>
+              <p className="text-lg font-black font-digital text-orange-400">{totals.wE.toFixed(1)}</p>
             </div>
-            <div className="bg-white/5 p-1.5 rounded-xl border border-white/10">
-              <p className="text-[6px] font-black text-blue-300 uppercase">Aprox.</p>
-              <p className="text-base font-black font-digital text-blue-100">{totals.est}</p>
+            <div className="bg-white/5 p-2 rounded-2xl border border-white/10">
+              <p className="text-[7px] font-black text-blue-300 uppercase">Jabas</p>
+              <p className="text-lg font-black font-digital text-amber-400">{totals.qF}</p>
             </div>
-            <div className="bg-white/5 p-1.5 rounded-xl border border-white/10">
-              <p className="text-[6px] font-black text-blue-300 uppercase">Jabas</p>
-              <p className="text-base font-black font-digital text-amber-400">{totals.qF}</p>
-            </div>
-            <div className="bg-white/5 p-1.5 rounded-xl border border-white/10">
-              <p className="text-[6px] font-black text-red-400 uppercase">Merma</p>
-              <p className="text-base font-black font-digital text-red-400">{totals.wM.toFixed(1)}</p>
-            </div>
-            <div className="bg-emerald-600 p-1.5 rounded-xl border border-emerald-500 shadow-inner">
-              <p className="text-[6px] font-black text-emerald-100 uppercase">Neto</p>
-              <p className="text-base font-black font-digital">{totals.net.toFixed(1)}</p>
+            <div className="bg-emerald-600 p-2 rounded-2xl shadow-inner">
+              <p className="text-[7px] font-black text-emerald-100 uppercase">Neto</p>
+              <p className="text-lg font-black font-digital">{totals.net.toFixed(1)}</p>
             </div>
           </div>
-
           <div className="flex gap-2 w-full lg:w-auto">
-            <button onClick={() => setShowDetailModal(true)} className="flex-1 lg:flex-none bg-white/10 p-2 rounded-xl border border-white/20 hover:bg-white/20 transition-all active:scale-95"><Eye size={16}/></button>
-            {!isLocked && <button onClick={() => { setPricePerKg(activeOrder.pricePerKg || ''); setShowPaymentModal(true); }} className="flex-1 lg:flex-none bg-emerald-600 px-5 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg hover:bg-emerald-500 active:scale-95 transition-all">Liquidar</button>}
+            {!isLocked && <button onClick={() => setShowPaymentModal(true)} className="flex-1 lg:flex-none bg-emerald-600 px-6 py-3 rounded-2xl font-black text-[10px] uppercase shadow-lg">Liquidar</button>}
           </div>
         </div>
       </div>
 
       {!isLocked && (
-        <div className="bg-white p-3 rounded-2xl shadow-xl border border-slate-100">
-          <div className="flex flex-col md:flex-row gap-3 items-stretch justify-center">
-            <div className="flex bg-slate-50 p-1 rounded-2xl gap-1.5 w-full md:w-auto border border-slate-100">
-              <button onClick={() => setActiveTab('FULL')} className={`flex-1 md:w-16 h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all ${activeTab === 'FULL' ? 'bg-blue-950 text-white shadow-lg' : 'text-slate-300'}`}>
-                <Package size={14}/><span className="text-[7px] font-black uppercase">Llenas</span>
+        <div className="bg-white p-4 rounded-3xl shadow-xl border border-slate-100">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex bg-slate-100 p-1.5 rounded-3xl gap-2 w-full md:w-auto border border-slate-200">
+              <button onClick={() => setActiveTab('FULL')} className={`flex-1 md:w-20 h-16 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${activeTab === 'FULL' ? 'bg-blue-950 text-white shadow-xl scale-105' : 'text-slate-400'}`}>
+                <Package size={20}/><span className="text-[8px] font-black uppercase">Bruto</span>
               </button>
-              <button onClick={() => setActiveTab('EMPTY')} className={`flex-1 md:w-16 h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all ${activeTab === 'EMPTY' ? 'bg-slate-400 text-white shadow-lg' : 'text-slate-300'}`}>
-                <PackageOpen size={14}/><span className="text-[7px] font-black uppercase">Vacías</span>
+              <button onClick={() => setActiveTab('EMPTY')} className={`flex-1 md:w-20 h-16 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${activeTab === 'EMPTY' ? 'bg-slate-500 text-white shadow-xl scale-105' : 'text-slate-400'}`}>
+                <PackageOpen size={20}/><span className="text-[8px] font-black uppercase">Tara</span>
               </button>
-              <button onClick={() => setActiveTab('MORTALITY')} className={`flex-1 md:w-16 h-14 rounded-xl flex flex-col items-center justify-center gap-0.5 transition-all ${activeTab === 'MORTALITY' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-300'}`}>
-                <Bird size={14}/><span className="text-[7px] font-black uppercase">Merma</span>
+              <button onClick={() => setActiveTab('MORTALITY')} className={`flex-1 md:w-20 h-16 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${activeTab === 'MORTALITY' ? 'bg-red-600 text-white shadow-xl scale-105' : 'text-slate-400'}`}>
+                <Bird size={20}/><span className="text-[8px] font-black uppercase">Merma</span>
               </button>
             </div>
             
-            <div className="flex gap-3 flex-1 max-w-2xl">
-              <div className="w-20 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center py-1">
-                <span className="text-[7px] font-black text-slate-400 uppercase mb-0.5">U.</span>
-                <input type="number" value={qtyInput} onChange={e => setQtyInput(e.target.value)} className="w-full text-center bg-transparent font-black text-xl outline-none text-slate-900" />
+            <div className="flex-1 flex flex-col">
+              <div className="flex gap-3 h-16">
+                <div className="w-24 bg-slate-50 border-2 border-slate-100 rounded-2xl flex flex-col items-center justify-center">
+                    <span className="text-[7px] font-black text-slate-400 uppercase">Cant.</span>
+                    <input type="number" value={qtyInput} onChange={e => setQtyInput(e.target.value)} className="w-full text-center bg-transparent font-black text-xl outline-none" />
+                </div>
+                <div className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-2xl flex flex-col items-center justify-center focus-within:border-blue-600 focus-within:bg-white transition-all shadow-inner">
+                    <span className="text-[7px] font-black text-slate-400 uppercase">Ingresar Peso (kg)</span>
+                    <input 
+                      ref={weightInputRef} 
+                      type="number" 
+                      value={weightInput} 
+                      onChange={e => setWeightInput(e.target.value)} 
+                      onKeyDown={e => e.key === 'Enter' && addWeight()} 
+                      readOnly={isSafari && window.innerWidth < 768}
+                      className="w-full text-center bg-transparent font-black text-4xl outline-none" 
+                      placeholder="0.0" 
+                    />
+                </div>
+                <button onClick={addWeight} className="w-20 md:w-32 bg-blue-900 text-white rounded-2xl shadow-xl hover:bg-blue-800 active:scale-95 transition-all flex items-center justify-center">
+                    <Save size={24}/>
+                </button>
               </div>
-              <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center py-1 focus-within:border-blue-500 focus-within:bg-white transition-all relative shadow-inner">
-                <span className="text-[7px] font-black text-slate-400 uppercase mb-0.5">Peso (Kg)</span>
-                <input 
-                  ref={weightInputRef} 
-                  type="number" 
-                  value={weightInput} 
-                  onChange={e => setWeightInput(e.target.value)} 
-                  onKeyDown={e => e.key === 'Enter' && addWeight()} 
-                  className="w-full text-center bg-transparent font-black text-3xl md:text-4xl outline-none text-slate-900" 
-                  placeholder="0.0" 
-                />
-              </div>
-              <button onClick={addWeight} className="w-16 md:w-24 bg-blue-950 hover:bg-blue-900 text-white rounded-xl shadow-xl transition-all active:scale-90 flex items-center justify-center border-b-4 border-blue-950/30">
-                <Save size={20}/>
-              </button>
+              {isSafari && <SafariNumpad />}
             </div>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1 overflow-hidden">
-        {[
-          { key: 'FULL', title: 'Registro Bruto', icon: <Package size={12}/>, color: 'blue' },
-          { key: 'EMPTY', title: 'Registro Tara', icon: <PackageOpen size={12}/>, color: 'orange' },
-          { key: 'MORTALITY', title: 'Registro Merma', icon: <Bird size={12}/>, color: 'red' }
-        ].map(type => (
-          <div key={type.key} className="bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden shadow-sm">
-            <div className={`p-2 font-black text-[7px] text-center uppercase tracking-widest text-white flex items-center justify-center gap-2 ${type.key === 'FULL' ? 'bg-blue-950' : type.key === 'EMPTY' ? 'bg-slate-500' : 'bg-red-600'}`}>
-              {type.icon} {type.title}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 overflow-hidden">
+        {['FULL', 'EMPTY', 'MORTALITY'].map(type => (
+          <div key={type} className="bg-white rounded-3xl border border-slate-200 flex flex-col overflow-hidden shadow-sm">
+            <div className={`p-3 font-black text-[9px] text-center uppercase tracking-[0.2em] text-white ${type === 'FULL' ? 'bg-blue-950' : type === 'EMPTY' ? 'bg-slate-500' : 'bg-red-600'}`}>
+              Detalle {type === 'FULL' ? 'Llenas' : type === 'EMPTY' ? 'Vacías' : 'Merma'}
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-slate-50/30">
-              {activeOrder.records.filter(r => r.type === type.key).slice(0, 15).map(r => (
-                <div key={r.id} className="flex justify-between items-center bg-white p-1.5 rounded-lg border border-slate-100 shadow-sm text-[11px] group/item">
-                  <div className="flex flex-col text-left">
-                    <span className="text-[6px] font-black text-slate-300 uppercase">{new Date(r.timestamp).toLocaleTimeString()}</span>
-                    <span className="font-digital font-black text-slate-800 text-sm leading-none">{r.weight.toFixed(2)}</span>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50">
+              {activeOrder.records.filter(r => r.type === type).map(r => (
+                <div key={r.id} className="flex justify-between items-center bg-white p-3 rounded-2xl border border-slate-100 shadow-sm text-left">
+                  <div>
+                    <span className="text-[7px] font-black text-slate-300 uppercase block">{new Date(r.timestamp).toLocaleTimeString()}</span>
+                    <span className="font-digital font-black text-slate-800 text-lg">{r.weight.toFixed(2)}</span>
+                    <span className="ml-2 text-[9px] font-bold text-slate-400 uppercase">x{r.quantity}</span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[8px] font-black text-slate-400 bg-slate-50 px-1 py-0.5 rounded">x{r.quantity}</span>
-                    {!isLocked && <button onClick={() => deleteRecord(r.id)} className="p-1 text-slate-200 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover/item:opacity-100 transition-all"><Trash2 size={10}/></button>}
-                  </div>
+                  {!isLocked && <button onClick={() => deleteRecord(r.id)} className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-xl"><Trash2 size={14}/></button>}
                 </div>
               ))}
             </div>
@@ -749,166 +373,25 @@ const WeighingStation: React.FC = () => {
         ))}
       </div>
 
-      {showDetailModal && (
-        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border-4 border-white animate-scale-up">
-            <div className="p-4 bg-blue-950 text-white flex justify-between items-center">
-              <div className="text-left">
-                <h3 className="text-lg font-black uppercase tracking-tighter">Detalle Operativo de Carga</h3>
-                <p className="text-blue-300 text-[8px] font-black uppercase tracking-widest mt-0.5">{activeOrder.clientName}</p>
-              </div>
-              <button onClick={() => setShowDetailModal(false)} className="bg-white/10 p-2 rounded-xl hover:bg-white/20 transition-all"><X size={16}/></button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-5 bg-slate-50/80">
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                  <div className="bg-white p-3 rounded-2xl border border-slate-200 text-center shadow-sm">
-                    <p className="text-[7px] font-black text-blue-400 uppercase tracking-widest mb-1">Bruto Total</p>
-                    <p className="font-digital font-black text-xl text-slate-900">{totals.wF.toFixed(2)} <span className="text-[10px]">kg</span></p>
-                    <p className="text-[7px] text-slate-400 font-bold uppercase mt-1">{totals.qF} Jabas</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-2xl border border-slate-200 text-center shadow-sm">
-                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Tara Total</p>
-                    <p className="font-digital font-black text-xl text-slate-900">{totals.wE.toFixed(2)} <span className="text-[10px]">kg</span></p>
-                    <p className="text-[7px] text-slate-400 font-bold uppercase mt-1">{totals.qE} Jabas</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-2xl border border-slate-200 text-center shadow-sm">
-                    <p className="text-[7px] font-black text-red-400 uppercase tracking-widest mb-1">Merma Técnica</p>
-                    <p className="font-digital font-black text-xl text-slate-900">{totals.wM.toFixed(2)} <span className="text-[10px]">kg</span></p>
-                    <p className="text-[7px] text-slate-400 font-bold uppercase mt-1">{totals.qM} Und</p>
-                  </div>
-                  <div className="bg-blue-900 p-3 rounded-2xl text-center shadow-xl border border-blue-800">
-                    <p className="text-[7px] font-black text-blue-200 uppercase tracking-widest mb-1">Neto Final</p>
-                    <p className="font-digital font-black text-xl text-white">{totals.net.toFixed(2)} <span className="text-[10px]">kg</span></p>
-                    <p className="text-[7px] text-blue-300 font-bold uppercase mt-1">Liquidación</p>
-                  </div>
-               </div>
-
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                 {['FULL', 'EMPTY', 'MORTALITY'].map(type => {
-                   const recs = activeOrder.records.filter(r => r.type === type).sort((a,b) => b.timestamp - a.timestamp);
-                   return (
-                     <div key={type} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-[40vh]">
-                        <div className={`px-4 py-2 text-white font-black uppercase tracking-widest text-[8px] flex items-center gap-2 ${type === 'FULL' ? 'bg-blue-900' : type === 'EMPTY' ? 'bg-slate-600' : 'bg-red-800'}`}>
-                           {type === 'FULL' ? <Package size={12}/> : type === 'EMPTY' ? <PackageOpen size={12}/> : <Bird size={12}/>} 
-                           {type === 'FULL' ? 'DETALLE LLENAS' : type === 'EMPTY' ? 'DETALLE VACÍAS' : 'DETALLE MERMA'}
-                        </div>
-                        <div className="flex-1 overflow-y-auto">
-                           <table className="w-full text-left text-[10px]">
-                              <thead className="bg-slate-50 sticky top-0 border-b border-slate-100">
-                                <tr className="text-[7px] font-black text-slate-400 uppercase tracking-widest">
-                                  <th className="p-2">U.</th>
-                                  <th className="p-2 text-right">Peso (kg)</th>
-                                  <th className="p-2"></th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-50">
-                                {recs.map(r => (
-                                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="p-2 font-bold text-slate-500">{r.quantity}</td>
-                                    <td className="p-2 text-right font-digital font-black text-sm text-slate-900">{r.weight.toFixed(2)}</td>
-                                    <td className="p-2 text-right">
-                                      {!isLocked && <button onClick={() => deleteRecord(r.id)} className="text-red-200 hover:text-red-600 transition-colors"><Trash2 size={10}/></button>}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                           </table>
-                        </div>
-                     </div>
-                   );
-                 })}
-               </div>
-            </div>
-
-            <div className="p-5 bg-white border-t border-slate-100 flex flex-wrap justify-between items-center gap-4">
-              <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Peso Neto: <span className="text-emerald-600 font-black">{totals.net.toFixed(2)} kg</span></div>
-              <div className="flex gap-2">
-                <button onClick={() => generateDetailedTicketPDF(activeOrder!)} className="bg-emerald-600 text-white px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-xl hover:bg-emerald-500 transition-all flex items-center gap-2">
-                    <Printer size={14}/> Ticket Detallado (80mm)
-                </button>
-                <button onClick={generateReportPDF} className="bg-blue-950 text-white px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-xl hover:bg-blue-900 transition-all flex items-center gap-2">
-                    <FileText size={14}/> Reporte A4 Detallado
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showPaymentModal && (activeOrder) && (
-        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4 z-50 overflow-hidden">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto border-4 border-white animate-scale-up scrollbar-hide">
-            <div className="p-5 bg-emerald-600 text-white flex items-center justify-between sticky top-0 z-10">
-                <div className="flex items-center gap-3">
-                    <Receipt size={22}/>
-                    <h3 className="text-lg font-black uppercase tracking-tighter">Cierre de Liquidación</h3>
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-md animate-scale-up shadow-2xl">
+            <h3 className="text-2xl font-black mb-8 text-slate-900 uppercase text-left">Cierre de Cuenta</h3>
+            <div className="space-y-6 text-left">
+                <div className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total a Liquidar</p>
+                    <p className="text-4xl font-digital font-black text-slate-900">S/. {(totals.net * (parseFloat(pricePerKg.toString()) || 0)).toFixed(2)}</p>
                 </div>
-                <button onClick={() => setShowPaymentModal(false)} className="bg-white/10 p-1.5 rounded-lg hover:bg-white/20 transition-all"><X size={18}/></button>
-            </div>
-
-            <div className="p-6 space-y-6 bg-slate-50/50">
-                <div className="bg-white border-2 border-slate-100 rounded-3xl p-5 shadow-inner relative text-left">
-                    <div className="border-b-2 border-dashed border-slate-100 pb-3 mb-3">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Cliente Receptor</p>
-                        <p className="text-sm font-black text-slate-800 uppercase">{activeOrder.clientName}</p>
-                    </div>
-                    <div className="space-y-2 text-[11px] font-bold text-slate-600">
-                        <div className="flex justify-between"><span>Bruto Total:</span><span className="font-digital text-slate-800">{totals.wF.toFixed(2)} kg</span></div>
-                        <div className="flex justify-between"><span>Tara Total:</span><span className="font-digital text-slate-800">{totals.wE.toFixed(2)} kg</span></div>
-                        <div className="flex justify-between pt-2 border-t border-slate-50 font-black text-slate-900">
-                            <span className="text-emerald-600">TOTAL NETO:</span>
-                            <span className="font-digital text-lg text-emerald-600">{totals.net.toFixed(2)} kg</span>
-                        </div>
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Precio pactado x Kg</label>
+                        <input type="number" value={pricePerKg} onChange={e => setPricePerKg(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 font-black text-xl outline-none" placeholder="0.00" autoFocus />
                     </div>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-2">
-                    <button 
-                        onClick={() => setPaymentMethod('CASH')}
-                        className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${paymentMethod === 'CASH' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 bg-white text-slate-400'}`}
-                    >
-                        <Wallet size={20} className="mb-1"/>
-                        <span className="text-[9px] font-black uppercase">Contado</span>
-                    </button>
-                    <button 
-                        onClick={() => setPaymentMethod('CREDIT')}
-                        className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${paymentMethod === 'CREDIT' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-100 bg-white text-slate-400'}`}
-                    >
-                        <CreditCard size={20} className="mb-1"/>
-                        <span className="text-[9px] font-black uppercase">Crédito</span>
-                    </button>
-                </div>
-
-                <div className="bg-white p-4 rounded-2xl border-2 border-slate-100 flex items-center justify-between text-left">
-                    <div className="flex-1">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Precio x Kg (S/.)</label>
-                        <input 
-                            type="number" 
-                            value={pricePerKg} 
-                            onChange={e => setPricePerKg(e.target.value)} 
-                            className="bg-transparent text-2xl font-digital font-black text-slate-900 outline-none w-full" 
-                            autoFocus 
-                            placeholder="0.00"
-                        />
-                    </div>
-                    <div className="text-right border-l border-slate-100 pl-4">
-                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total {paymentMethod === 'CASH' ? 'Pagado' : 'Deuda'}</label>
-                        <p className={`text-2xl font-digital font-black leading-none ${paymentMethod === 'CASH' ? 'text-emerald-600' : 'text-blue-600'}`}>
-                            S/. {((mode === WeighingType.SOLO_POLLO ? totals.wF : totals.net) * (parseFloat(pricePerKg.toString()) || 0)).toFixed(2)}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex flex-col gap-2 pt-2 pb-2">
-                  <button 
-                    onClick={handlePayment} 
-                    className={`w-full text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all active:scale-95 border-b-4 ${paymentMethod === 'CASH' ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-800' : 'bg-blue-900 hover:bg-blue-800 border-blue-950'}`}
-                  >
-                    Confirmar e Imprimir Ticket ({paymentMethod === 'CASH' ? 'Contado' : 'Crédito'})
-                  </button>
-                  <button onClick={() => setShowPaymentModal(false)} className="w-full py-2 text-slate-400 font-black text-[9px] uppercase hover:text-slate-600 transition-colors">Volver</button>
-                </div>
+            </div>
+            <div className="mt-10 flex flex-col gap-3">
+              <button onClick={handlePayment} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-xs uppercase shadow-xl hover:bg-emerald-500 active:scale-95 transition-all">Confirmar e Imprimir</button>
+              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 font-black text-[10px] uppercase py-2">Cancelar</button>
             </div>
           </div>
         </div>
