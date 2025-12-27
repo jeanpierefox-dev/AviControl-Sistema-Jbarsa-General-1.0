@@ -47,6 +47,20 @@ const Collections: React.FC = () => {
     return matchesSearch;
   });
 
+  const handlePDFOutput = (doc: jsPDF, filename: string) => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      const newWindow = window.open(url, '_blank');
+      if (!newWindow) {
+          window.location.href = url;
+      }
+    } else {
+      doc.save(filename);
+    }
+  };
+
   const generateReceiptPDF = (order: ClientOrder, payment: Payment, balanceInfo: any) => {
     const doc = new jsPDF({ unit: 'mm', format: [80, 150] });
     const company = config.companyName || 'SISTEMA BARSA';
@@ -62,7 +76,7 @@ const Collections: React.FC = () => {
     doc.text(`Fecha: ${new Date(payment.timestamp).toLocaleString()}`, 5, 24);
     doc.text(`Cliente: ${order.clientName.toUpperCase()}`, 5, 29);
 
-    doc.rect(5, 33, 70, 45); // Cuadro resumen
+    doc.rect(5, 33, 70, 45); 
     doc.setFont("helvetica", "bold");
     doc.text("DETALLE DE CUENTA", 40, 39, { align: 'center' });
     doc.line(5, 41, 75, 41);
@@ -89,7 +103,7 @@ const Collections: React.FC = () => {
     doc.text("Este documento es un comprobante de abono.", 40, 85, { align: 'center' });
     doc.text("Conserve este recibo.", 40, 89, { align: 'center' });
 
-    doc.save(`Recibo_Pago_${order.clientName}_${payment.id}.pdf`);
+    handlePDFOutput(doc, `Recibo_Pago_${order.clientName}_${payment.id}.pdf`);
   };
 
   const handlePay = () => {
@@ -111,8 +125,6 @@ const Collections: React.FC = () => {
     if (bal.balance <= 0.1) updatedOrder.paymentStatus = 'PAID';
     
     saveOrder(updatedOrder);
-    
-    // Generar recibo
     generateReceiptPDF(updatedOrder, payment, bal);
     
     refresh(); 

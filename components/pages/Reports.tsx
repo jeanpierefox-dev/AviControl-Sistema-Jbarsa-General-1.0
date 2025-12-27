@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useContext } from 'react';
 import { getBatches, getOrders, getConfig } from '../../services/storage';
 import { Batch, ClientOrder, WeighingType, UserRole } from '../../types';
@@ -30,6 +31,20 @@ const Reports: React.FC = () => {
       }
   }
 
+  const handlePDFOutput = (doc: jsPDF, filename: string) => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      const newWindow = window.open(url, '_blank');
+      if (!newWindow) {
+          window.location.href = url;
+      }
+    } else {
+      doc.save(filename);
+    }
+  };
+
   const getStats = (filterFn: (o: ClientOrder) => boolean) => {
     const filteredOrders = orders.filter(filterFn);
     let totalFull = 0, totalEmpty = 0, totalNet = 0, totalMort = 0;
@@ -55,10 +70,9 @@ const Reports: React.FC = () => {
       const doc = new jsPDF();
       const company = config.companyName || 'SISTEMA BARSA';
       const logo = config.logoUrl;
-      const primaryColor = [23, 37, 84]; // Navy Blue
-      const accentColor = [22, 163, 74]; // Green
+      const primaryColor = [23, 37, 84]; 
+      const accentColor = [22, 163, 74]; 
 
-      // 1. Header
       if (logo) {
         try { doc.addImage(logo, 'PNG', 14, 10, 20, 20); } catch {}
       }
@@ -74,7 +88,6 @@ const Reports: React.FC = () => {
       doc.text("REPORTE INTEGRAL DE LOTE", 105, 24, { align: 'center' });
       doc.text(`Lote: ${batchName} | Fecha: ${new Date().toLocaleDateString()}`, 105, 29, { align: 'center' });
 
-      // --- SECTION 1: GENERAL WEIGHT SUMMARY (CUADRO PRINCIPAL) ---
       autoTable(doc, {
         startY: 35,
         theme: 'grid',
@@ -89,7 +102,6 @@ const Reports: React.FC = () => {
         ]
       });
 
-      // --- SECTION 2: PHYSICAL DETAILS PER CLIENT ---
       doc.setFontSize(11);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
       doc.text("1. DETALLE DE PRODUCCIÓN (PESOS)", 14, (doc as any).lastAutoTable.finalY + 10);
@@ -116,7 +128,7 @@ const Reports: React.FC = () => {
           head: [['#', 'Cliente', 'Bruto', 'Tara', 'Merma', 'Neto']],
           body: physicalData,
           theme: 'striped',
-          headStyles: { fillColor: [71, 85, 105], halign: 'center' }, // Slate Header
+          headStyles: { fillColor: [71, 85, 105], halign: 'center' },
           columnStyles: {
               0: { halign: 'center', cellWidth: 10 },
               2: { halign: 'right' },
@@ -126,8 +138,6 @@ const Reports: React.FC = () => {
           }
       });
 
-      // --- SECTION 3: FINANCIAL DETAILS PER CLIENT ---
-      // Check for page break
       if ((doc as any).lastAutoTable.finalY > 200) doc.addPage();
       
       const startYFin = (doc as any).lastAutoTable.finalY > 200 ? 20 : (doc as any).lastAutoTable.finalY + 10;
@@ -168,7 +178,7 @@ const Reports: React.FC = () => {
           head: [['#', 'Cliente', 'Precio/Kg', 'Venta Total', 'Abonado', 'Por Cobrar']],
           body: financialData,
           theme: 'striped',
-          headStyles: { fillColor: [30, 58, 138], halign: 'center' }, // Dark Blue
+          headStyles: { fillColor: [30, 58, 138], halign: 'center' },
           columnStyles: {
               0: { halign: 'center', cellWidth: 10 },
               2: { halign: 'right' },
@@ -180,8 +190,6 @@ const Reports: React.FC = () => {
 
       const totalBatchDebt = totalBatchSale - totalBatchPaid;
 
-      // --- SECTION 4: GRAND TOTALS ---
-      // Check for page break
       if ((doc as any).lastAutoTable.finalY > 230) doc.addPage();
       const startYTotal = (doc as any).lastAutoTable.finalY > 230 ? 20 : (doc as any).lastAutoTable.finalY + 10;
 
@@ -210,12 +218,10 @@ const Reports: React.FC = () => {
           doc.text(`Página ${i} de ${pageCount}`, 190, 285, { align: 'right' });
       }
 
-      doc.save(`Reporte_Lote_${batchName}.pdf`);
+      handlePDFOutput(doc, `Reporte_Lote_${batchName}.pdf`);
   };
 
-  // Modified Chart: Only Mortality
   const MortalityChart = ({ orders }: { orders: ClientOrder[] }) => {
-      // Flatten all records but filter ONLY for MORTALITY
       const data = orders.flatMap(o => o.records
           .filter(r => r.type === 'MORTALITY')
           .map(r => ({ ...r, client: o.clientName }))
@@ -292,7 +298,6 @@ const Reports: React.FC = () => {
 
                 <MortalityChart orders={stats.batchOrders} />
 
-                {/* Batch Summary - Grid Responsive */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 text-center">
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
                         <p className="text-[10px] md:text-xs text-slate-400 uppercase font-bold tracking-wider">Bruto</p>
@@ -312,16 +317,13 @@ const Reports: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Clients Detail List - Expanded Breakdown */}
                 <h4 className="text-xs font-black text-slate-400 mb-4 uppercase tracking-widest border-b border-slate-200 pb-2">Desglose por Cliente</h4>
                 <div className="space-y-3">
                     {stats.batchOrders.map((order: ClientOrder) => {
-                        // Calculations for Weight
                         const wFull = order.records.filter(r => r.type === 'FULL').reduce((a, b) => a + b.weight, 0);
                         const wEmpty = order.records.filter(r => r.type === 'EMPTY').reduce((a, b) => a + b.weight, 0);
                         const wMort = order.records.filter(r => r.type === 'MORTALITY').reduce((a, b) => a + b.weight, 0);
                         
-                        // Calculations for Count/Quantity
                         const qFull = order.records.filter(r => r.type === 'FULL').reduce((a, b) => a + b.quantity, 0);
                         const qEmpty = order.records.filter(r => r.type === 'EMPTY').reduce((a, b) => a + b.quantity, 0);
                         const qMort = order.records.filter(r => r.type === 'MORTALITY').reduce((a, b) => a + b.quantity, 0);
@@ -435,7 +437,6 @@ const Reports: React.FC = () => {
       </div>
       
       <div>
-        {/* Direct Sales Card */}
         {directSalesStats.orderCount > 0 && (
             <ReportCard 
                 id="direct-sales" 
@@ -446,7 +447,6 @@ const Reports: React.FC = () => {
             />
         )}
 
-        {/* Batch Cards */}
         {batches.map(batch => {
           const stats = getStats(o => o.batchId === batch.id);
           return (

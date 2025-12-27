@@ -173,6 +173,22 @@ const WeighingStation: React.FC = () => {
     setActiveOrder(updated);
   };
 
+  // Helper para manejar la salida del PDF en móviles y escritorio
+  const handlePDFOutput = (doc: jsPDF, filename: string) => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      const blob = doc.output('blob');
+      const url = URL.createObjectURL(blob);
+      const newWindow = window.open(url, '_blank');
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+          // Si el popup es bloqueado, intentamos redirigir la ubicación actual
+          window.location.href = url;
+      }
+    } else {
+      doc.save(filename);
+    }
+  };
+
   const generateTicketPDF = (order: ClientOrder) => {
     const t = getTotals(order);
     const doc = new jsPDF({ unit: 'mm', format: [80, 200] });
@@ -230,10 +246,9 @@ const WeighingStation: React.FC = () => {
     
     doc.text("Gracias por su preferencia", 40, 110, { align: 'center' });
 
-    doc.save(`Ticket_${order.clientName}_${Date.now()}.pdf`);
+    handlePDFOutput(doc, `Ticket_${order.clientName}_${Date.now()}.pdf`);
   };
 
-  // Función auxiliar para formatear datos en cuadrícula (grid) para el ticket
   const generateTicketGridData = (records: WeighingRecord[], cols: number) => {
     const rows = [];
     for (let i = 0; i < records.length; i += cols) {
@@ -253,7 +268,6 @@ const WeighingStation: React.FC = () => {
     return rows;
   };
 
-  // NUEVA FUNCIÓN OPTIMIZADA: Reporte detallado en formato Ticket 80mm con GRIDS
   const generateDetailedTicketPDF = (order: ClientOrder) => {
     const t = getTotals(order);
     const doc = new jsPDF({ unit: 'mm', format: [80, 400] }); 
@@ -279,7 +293,6 @@ const WeighingStation: React.FC = () => {
 
     let currentY = 32;
 
-    // Tabla de Llenas en Grid de 2 columnas
     if (fullRecs.length > 0) {
       doc.setFont("helvetica", "bold").setFontSize(8);
       doc.text("1. PESADAS BRUTAS (LLENAS)", 5, currentY);
@@ -295,7 +308,6 @@ const WeighingStation: React.FC = () => {
       currentY = (doc as any).lastAutoTable.finalY + 6;
     }
 
-    // Tabla de Vacías en Grid de 2 columnas
     if (emptyRecs.length > 0) {
       doc.setFont("helvetica", "bold").setFontSize(8);
       doc.text("2. TARA (VACÍAS)", 5, currentY);
@@ -311,7 +323,6 @@ const WeighingStation: React.FC = () => {
       currentY = (doc as any).lastAutoTable.finalY + 6;
     }
 
-    // Tabla de Merma en Grid de 2 columnas
     if (mortRecs.length > 0) {
       doc.setFont("helvetica", "bold").setFontSize(8);
       doc.text("3. MERMA / MORTALIDAD", 5, currentY);
@@ -327,7 +338,6 @@ const WeighingStation: React.FC = () => {
       currentY = (doc as any).lastAutoTable.finalY + 6;
     }
 
-    // Resumen Final
     doc.line(5, currentY, 75, currentY);
     currentY += 5;
     doc.setFontSize(9).setFont("helvetica", "bold");
@@ -337,7 +347,7 @@ const WeighingStation: React.FC = () => {
     doc.setFontSize(7).setFont("helvetica", "normal");
     doc.text("Fin del Ticket Detallado", 40, currentY + 8, { align: 'center' });
 
-    doc.save(`Detalle_Ticket_${order.clientName}_${Date.now()}.pdf`);
+    handlePDFOutput(doc, `Detalle_Ticket_${order.clientName}_${Date.now()}.pdf`);
   };
 
   const generateReportPDF = () => {
@@ -446,7 +456,7 @@ const WeighingStation: React.FC = () => {
         });
     }
 
-    doc.save(`Reporte_Detallado_${activeOrder.clientName}_${Date.now()}.pdf`);
+    handlePDFOutput(doc, `Reporte_Detallado_${activeOrder.clientName}_${Date.now()}.pdf`);
   };
 
   const handlePayment = () => {
