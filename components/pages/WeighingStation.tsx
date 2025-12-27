@@ -7,7 +7,7 @@ import {
   ArrowLeft, Save, DollarSign, X, Eye, Package, PackageOpen, 
   RotateCcw, User, Edit2, Trash2, 
   Scale, Box, UserPlus, Bird, Printer, Receipt, CreditCard, Wallet,
-  Clock
+  Clock, FileText
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -233,13 +233,119 @@ const WeighingStation: React.FC = () => {
     doc.save(`Ticket_${order.clientName}_${Date.now()}.pdf`);
   };
 
+  // Función auxiliar para formatear datos en cuadrícula (grid) para el ticket
+  const generateTicketGridData = (records: WeighingRecord[], cols: number) => {
+    const rows = [];
+    for (let i = 0; i < records.length; i += cols) {
+      const row = [];
+      for (let j = 0; j < cols; j++) {
+        const r = records[i + j];
+        if (r) {
+          row.push(`${r.quantity}`);
+          row.push(`${r.weight.toFixed(1)}`);
+        } else {
+          row.push('');
+          row.push('');
+        }
+      }
+      rows.push(row);
+    }
+    return rows;
+  };
+
+  // NUEVA FUNCIÓN OPTIMIZADA: Reporte detallado en formato Ticket 80mm con GRIDS
+  const generateDetailedTicketPDF = (order: ClientOrder) => {
+    const t = getTotals(order);
+    const doc = new jsPDF({ unit: 'mm', format: [80, 400] }); 
+    const company = config.companyName.toUpperCase();
+
+    doc.setFont("helvetica", "bold").setFontSize(11);
+    doc.text(company, 40, 10, { align: 'center' });
+    
+    doc.setFontSize(7).setFont("helvetica", "normal");
+    doc.text("REPORTE DETALLADO (FORMATO COMPACTO)", 40, 14, { align: 'center' });
+    doc.text(`${new Date().toLocaleString()}`, 40, 17, { align: 'center' });
+
+    doc.line(5, 19, 75, 19);
+
+    doc.setFontSize(9).setFont("helvetica", "bold");
+    doc.text("CLIENTE:", 5, 24);
+    doc.setFont("helvetica", "normal").setFontSize(8);
+    doc.text(order.clientName.toUpperCase(), 5, 28);
+
+    const fullRecs = order.records.filter(r => r.type === 'FULL').sort((a,b) => a.timestamp - b.timestamp);
+    const emptyRecs = order.records.filter(r => r.type === 'EMPTY').sort((a,b) => a.timestamp - b.timestamp);
+    const mortRecs = order.records.filter(r => r.type === 'MORTALITY').sort((a,b) => a.timestamp - b.timestamp);
+
+    let currentY = 32;
+
+    // Tabla de Llenas en Grid de 2 columnas
+    if (fullRecs.length > 0) {
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      doc.text("1. PESADAS BRUTAS (LLENAS)", 5, currentY);
+      autoTable(doc, {
+        startY: currentY + 2,
+        margin: { left: 5, right: 5 },
+        head: [['C.', 'Kg', 'C.', 'Kg']],
+        body: generateTicketGridData(fullRecs, 2),
+        theme: 'grid',
+        styles: { fontSize: 6, cellPadding: 0.8, halign: 'center' },
+        headStyles: { fillColor: [30, 41, 59], fontSize: 6 }
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 6;
+    }
+
+    // Tabla de Vacías en Grid de 2 columnas
+    if (emptyRecs.length > 0) {
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      doc.text("2. TARA (VACÍAS)", 5, currentY);
+      autoTable(doc, {
+        startY: currentY + 2,
+        margin: { left: 5, right: 5 },
+        head: [['C.', 'Kg', 'C.', 'Kg']],
+        body: generateTicketGridData(emptyRecs, 2),
+        theme: 'grid',
+        styles: { fontSize: 6, cellPadding: 0.8, halign: 'center' },
+        headStyles: { fillColor: [71, 85, 105], fontSize: 6 }
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 6;
+    }
+
+    // Tabla de Merma en Grid de 2 columnas
+    if (mortRecs.length > 0) {
+      doc.setFont("helvetica", "bold").setFontSize(8);
+      doc.text("3. MERMA / MORTALIDAD", 5, currentY);
+      autoTable(doc, {
+        startY: currentY + 2,
+        margin: { left: 5, right: 5 },
+        head: [['C.', 'Kg', 'C.', 'Kg']],
+        body: generateTicketGridData(mortRecs, 2),
+        theme: 'grid',
+        styles: { fontSize: 6, cellPadding: 0.8, halign: 'center' },
+        headStyles: { fillColor: [153, 27, 27], fontSize: 6 }
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 6;
+    }
+
+    // Resumen Final
+    doc.line(5, currentY, 75, currentY);
+    currentY += 5;
+    doc.setFontSize(9).setFont("helvetica", "bold");
+    doc.text("PESO NETO TOTAL:", 5, currentY);
+    doc.text(`${t.net.toFixed(2)} kg`, 75, currentY, { align: 'right' });
+    
+    doc.setFontSize(7).setFont("helvetica", "normal");
+    doc.text("Fin del Ticket Detallado", 40, currentY + 8, { align: 'center' });
+
+    doc.save(`Detalle_Ticket_${order.clientName}_${Date.now()}.pdf`);
+  };
+
   const generateReportPDF = () => {
     if (!activeOrder) return;
     const t = getTotals(activeOrder);
     const doc = new jsPDF();
     const company = config.companyName.toUpperCase();
 
-    // Reducción de márgenes iniciales
     doc.setFont("helvetica", "bold").setFontSize(14);
     doc.text(company, 105, 12, { align: 'center' });
     
@@ -248,7 +354,6 @@ const WeighingStation: React.FC = () => {
     doc.setFontSize(9);
     doc.text(`Cliente: ${activeOrder.clientName} | Fecha: ${new Date().toLocaleString()}`, 105, 23, { align: 'center' });
 
-    // Tabla Resumen Compacta
     autoTable(doc, {
       startY: 28,
       margin: { left: 14, right: 14 },
@@ -264,7 +369,6 @@ const WeighingStation: React.FC = () => {
       headStyles: { fillColor: [23, 37, 84] }
     });
 
-    // Función auxiliar para generar grillas de pesadas (multi-columna)
     const generateGridData = (records: WeighingRecord[], cols: number) => {
         const rows = [];
         for (let i = 0; i < records.length; i += cols) {
@@ -288,7 +392,6 @@ const WeighingStation: React.FC = () => {
     const emptyRecs = activeOrder.records.filter(r => r.type === 'EMPTY').sort((a,b) => a.timestamp - b.timestamp);
     const mortRecs = activeOrder.records.filter(r => r.type === 'MORTALITY').sort((a,b) => a.timestamp - b.timestamp);
 
-    // 1. Detalle Jabas Llenas (Grilla de 4 bloques)
     doc.setFont("helvetica", "bold").setFontSize(9);
     doc.text("1. DETALLE DE PESADAS LLENAS (BRUTO)", 14, (doc as any).lastAutoTable.finalY + 8);
 
@@ -307,7 +410,6 @@ const WeighingStation: React.FC = () => {
       headStyles: { fillColor: [30, 41, 59], fontSize: 7 }
     });
 
-    // 2. Detalle Jabas Vacías (Grilla de 3 bloques)
     if (emptyRecs.length > 0) {
         doc.setFont("helvetica", "bold").setFontSize(9);
         doc.text("2. DETALLE DE TARA (VACÍAS)", 14, (doc as any).lastAutoTable.finalY + 8);
@@ -326,7 +428,6 @@ const WeighingStation: React.FC = () => {
         });
     }
 
-    // 3. Detalle Merma (Grilla de 3 bloques)
     if (mortRecs.length > 0) {
         doc.setFont("helvetica", "bold").setFontSize(9);
         doc.text("3. DETALLE DE MERMA / MORTALIDAD", 14, (doc as any).lastAutoTable.finalY + 8);
@@ -710,11 +811,16 @@ const WeighingStation: React.FC = () => {
                </div>
             </div>
 
-            <div className="p-5 bg-white border-t border-slate-100 flex justify-between items-center">
+            <div className="p-5 bg-white border-t border-slate-100 flex flex-wrap justify-between items-center gap-4">
               <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Peso Neto: <span className="text-emerald-600 font-black">{totals.net.toFixed(2)} kg</span></div>
-              <button onClick={generateReportPDF} className="bg-blue-950 text-white px-8 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-xl hover:bg-blue-900 transition-all flex items-center gap-2">
-                <Printer size={14}/> Reporte PDF Detallado
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => generateDetailedTicketPDF(activeOrder!)} className="bg-emerald-600 text-white px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-xl hover:bg-emerald-500 transition-all flex items-center gap-2">
+                    <Printer size={14}/> Ticket Detallado (80mm)
+                </button>
+                <button onClick={generateReportPDF} className="bg-blue-950 text-white px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-xl hover:bg-blue-900 transition-all flex items-center gap-2">
+                    <FileText size={14}/> Reporte A4 Detallado
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
-import { User, UserRole, Batch, ClientOrder, AppConfig } from '../types';
+
+import { User, UserRole, Batch, ClientOrder, AppConfig, WeighingType } from '../types';
 import { initializeApp, getApps, deleteApp, FirebaseApp } from 'firebase/app';
 import { 
     getFirestore, 
@@ -32,12 +33,35 @@ const safeParse = (key: string, fallback: any) => {
     }
 };
 
+export const getConfig = (): AppConfig => {
+  return safeParse(KEYS.CONFIG, {
+    companyName: 'AVI CONTROL',
+    logoUrl: '',
+    printerConnected: false,
+    scaleConnected: false,
+    defaultFullCrateBatch: 5,
+    defaultEmptyCrateBatch: 10
+  });
+};
+
+export const saveConfig = (config: AppConfig) => {
+  localStorage.setItem(KEYS.CONFIG, JSON.stringify(config));
+  window.dispatchEvent(new Event('avi_data_config'));
+};
+
+export const isFirebaseConfigured = (): boolean => {
+    const config = getConfig();
+    return !!(config.firebaseConfig?.apiKey && config.firebaseConfig?.projectId && config.firebaseConfig?.databaseURL);
+};
+
+export const resetApp = () => {
+    localStorage.clear();
+    window.location.reload();
+};
+
 let db: Firestore | null = null;
 let unsubscribers: Function[] = [];
 
-/**
- * Valida la configuración de Firebase intentando una conexión real.
- */
 export const validateConfig = async (firebaseConfig: any): Promise<{ valid: boolean; error?: string }> => {
     let app: FirebaseApp | null = null;
     let tempDb: Firestore | null = null;
@@ -48,7 +72,6 @@ export const validateConfig = async (firebaseConfig: any): Promise<{ valid: bool
             return { valid: false, error: "⚠️ Campos incompletos: API Key, Project ID y Database URL son obligatorios." };
         }
         
-        // Limpiar apps previas de validación
         const apps = getApps();
         for (const existingApp of apps) {
             if (existingApp.name.startsWith('validator_')) {
@@ -68,7 +91,6 @@ export const validateConfig = async (firebaseConfig: any): Promise<{ valid: bool
             };
         }
         
-        // Prueba de escritura real
         const testRef = doc(tempDb, 'system_test', 'connection_check');
         await setDoc(testRef, { 
             status: 'success', 
@@ -95,24 +117,19 @@ export const validateConfig = async (firebaseConfig: any): Promise<{ valid: bool
     }
 };
 
-/**
- * Inicializa el servicio de sincronización principal.
- */
 export const initCloudSync = async () => {
   const config = getConfig();
   unsubscribers.forEach(unsub => unsub());
   unsubscribers = [];
 
-  if (config.firebaseConfig?.apiKey && config.firebaseConfig?.projectId && config.firebaseConfig?.databaseURL) {
+  if (isFirebaseConfigured()) {
     try {
       let app: FirebaseApp;
       const apps = getApps();
-      
-      // Usamos la app por defecto si ya existe, sino la creamos
       const defaultApp = apps.find(a => a.name === '[DEFAULT]');
       
       if (!defaultApp) {
-          app = initializeApp(config.firebaseConfig);
+          app = initializeApp(config.firebaseConfig!);
           try {
             db = initializeFirestore(app, { cacheSizeBytes: CACHE_SIZE_UNLIMITED });
             await enableIndexedDbPersistence(db); 
@@ -131,6 +148,88 @@ export const initCloudSync = async () => {
   }
 };
 
+export const getUsers = (): User[] => {
+    const users = safeParse(KEYS.USERS, []);
+    if (users.length === 0) {
+        const defaultAdmin: User = { 
+            id: 'admin', 
+            username: 'admin', 
+            password: '123', 
+            name: 'Administrador', 
+            role: UserRole.ADMIN, 
+            allowedModes: [WeighingType.BATCH, WeighingType.SOLO_POLLO, WeighingType.SOLO_JABAS] 
+        };
+        return [defaultAdmin];
+    }
+    return users;
+};
+
+export const saveUser = (user: User) => {
+    const users = getUsers();
+    const idx = users.findIndex(u => u.id === user.id);
+    if (idx >= 0) users[idx] = user; else users.push(user);
+    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+    if (db) setDoc(doc(db, 'users', user.id), user, { merge: true });
+};
+
+export const deleteUser = (id: string) => {
+    const users = getUsers().filter(u => u.id !== id);
+    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
+    if (db) deleteDoc(doc(db, 'users', id));
+};
+
+export const login = (username: string, password: string): User | null => {
+    const users = getUsers();
+    return users.find(u => u.username === username && u.password === password) || null;
+};
+
+export const getBatches = (): Batch[] => safeParse(KEYS.BATCHES, []);
+
+export const saveBatch = (batch: Batch) => {
+    const batches = getBatches();
+    const idx = batches.findIndex(b => b.id === batch.id);
+    if (idx >= 0) batches[idx] = batch; else batches.push(batch);
+    localStorage.setItem(KEYS.BATCHES, JSON.stringify(batches));
+    if (db) setDoc(doc(db, 'batches', batch.id), batch, { merge: true });
+};
+
+export const deleteBatch = (id: string) => {
+    const batches = getBatches().filter(b => b.id !== id);
+    localStorage.setItem(KEYS.BATCHES, JSON.stringify(batches));
+    if (db) deleteDoc(doc(db, 'batches', id));
+};
+
+export const getOrders = (): ClientOrder[] => safeParse(KEYS.ORDERS, []);
+
+export const getOrdersByBatch = (batchId: string): ClientOrder[] => 
+    getOrders().filter(o => o.batchId === batchId);
+
+export const saveOrder = (order: ClientOrder) => {
+    const orders = getOrders();
+    const idx = orders.findIndex(o => o.id === order.id);
+    if (idx >= 0) orders[idx] = order; else orders.push(order);
+    localStorage.setItem(KEYS.ORDERS, JSON.stringify(orders));
+    if (db) setDoc(doc(db, 'orders', order.id), order, { merge: true });
+};
+
+export const deleteOrder = (id: string) => {
+    const orders = getOrders().filter(o => o.id !== id);
+    localStorage.setItem(KEYS.ORDERS, JSON.stringify(orders));
+    if (db) deleteDoc(doc(db, 'orders', id));
+};
+
+export const uploadLocalToCloud = async () => {
+    if (!db) return;
+    const upload = async (col: string, data: any[]) => {
+        for (const item of data) {
+            await setDoc(doc(db!, col, item.id), item, { merge: true });
+        }
+    };
+    await upload('users', getUsers());
+    await upload('batches', getBatches());
+    await upload('orders', getOrders());
+};
+
 const startListeners = () => {
   if (!db) return;
   
@@ -140,33 +239,16 @@ const startListeners = () => {
         const q = collection(db, colName);
         const unsub = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
           if (snapshot.empty && snapshot.metadata.fromCache) return;
-          
+          const cloudData = snapshot.docs.map(doc => doc.data());
           const currentLocalRaw = localStorage.getItem(storageKey);
-          const currentLocal: any[] = currentLocalRaw ? JSON.parse(currentLocalRaw) : [];
-          const dataMap = new Map<string, any>();
-          currentLocal.forEach(item => dataMap.set(item.id, item));
+          const currentLocal = currentLocalRaw ? JSON.parse(currentLocalRaw) : [];
           
-          let hasChanges = false;
-          snapshot.docChanges().forEach((change) => {
-              const docData = change.doc.data();
-              if (change.type === 'removed') {
-                  if (dataMap.has(change.doc.id)) { dataMap.delete(change.doc.id); hasChanges = true; }
-              } else {
-                  const existing = dataMap.get(docData.id);
-                  if (!existing || JSON.stringify(existing) !== JSON.stringify(docData)) {
-                      dataMap.set(docData.id, docData);
-                      hasChanges = true;
-                  }
-              }
-          });
-          
-          if (hasChanges) {
-              const mergedData = Array.from(dataMap.values());
-              localStorage.setItem(storageKey, JSON.stringify(mergedData));
+          if (JSON.stringify(cloudData) !== JSON.stringify(currentLocal)) {
+              localStorage.setItem(storageKey, JSON.stringify(cloudData));
               window.dispatchEvent(new Event(eventName));
           }
         }, (error) => {
-            console.error(`Error en listener ${colName}:`, error);
+            console.error(`Error en listener en tiempo real (${colName}):`, error);
         });
         unsubscribers.push(unsub);
     } catch(e) {
@@ -178,120 +260,3 @@ const startListeners = () => {
   syncCollection('batches', KEYS.BATCHES, 'avi_data_batches');
   syncCollection('orders', KEYS.ORDERS, 'avi_data_orders');
 };
-
-export const uploadLocalToCloud = async () => {
-  if (!db) return;
-  const upload = async (colName: string, data: any[]) => {
-      if (!db) return;
-      await Promise.all(data.map(item => {
-          if(item && item.id && db) return setDoc(doc(db, colName, item.id), item, { merge: true });
-          return Promise.resolve();
-      }));
-  };
-  await upload('users', getUsers());
-  await upload('batches', getBatches());
-  await upload('orders', getOrders());
-};
-
-const writeToCloud = async (collectionName: string, data: any) => {
-  if (db && data.id) setDoc(doc(db, collectionName, data.id), data, { merge: true }).catch(() => {});
-};
-
-const deleteFromCloud = async (collectionName: string, id: string) => {
-  if (db && id) deleteDoc(doc(db, collectionName, id)).catch(() => {});
-};
-
-const seedData = () => {
-  if (localStorage.getItem(KEYS.USERS) === null) {
-    const admin: User = { id: 'admin-1', username: 'admin', password: '123', name: 'Administrador Principal', role: UserRole.ADMIN };
-    localStorage.setItem(KEYS.USERS, JSON.stringify([admin]));
-  }
-  if (localStorage.getItem(KEYS.CONFIG) === null) {
-    const config: AppConfig = { 
-      companyName: 'AviControl Pro', 
-      logoUrl: '', 
-      printerConnected: false, 
-      scaleConnected: false, 
-      defaultFullCrateBatch: 5, 
-      defaultEmptyCrateBatch: 10 
-    };
-    localStorage.setItem(KEYS.CONFIG, JSON.stringify(config));
-  }
-};
-
-export const getUsers = (): User[] => safeParse(KEYS.USERS, []);
-export const saveUser = (user: User) => {
-  const users = getUsers();
-  const idx = users.findIndex(u => u.id === user.id);
-  if (idx >= 0) users[idx] = user; else users.push(user);
-  localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-  writeToCloud('users', user);
-  window.dispatchEvent(new Event('avi_data_users'));
-};
-export const deleteUser = (id: string) => {
-  const users = getUsers().filter(u => u.id !== id);
-  localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-  deleteFromCloud('users', id);
-  window.dispatchEvent(new Event('avi_data_users'));
-};
-export const login = (u: string, p: string): User | null => {
-  const users = getUsers();
-  return users.find(user => user.username === u && user.password === p) || null;
-};
-export const getBatches = (): Batch[] => safeParse(KEYS.BATCHES, []);
-export const saveBatch = (batch: Batch) => {
-  const batches = getBatches();
-  const idx = batches.findIndex(b => b.id === batch.id);
-  if (idx >= 0) batches[idx] = batch; else batches.push(batch);
-  localStorage.setItem(KEYS.BATCHES, JSON.stringify(batches));
-  writeToCloud('batches', batch);
-  window.dispatchEvent(new Event('avi_data_batches'));
-};
-export const deleteBatch = (id: string) => {
-  const batches = getBatches().filter(b => b.id !== id);
-  localStorage.setItem(KEYS.BATCHES, JSON.stringify(batches));
-  deleteFromCloud('batches', id);
-  window.dispatchEvent(new Event('avi_data_batches'));
-};
-export const getOrders = (): ClientOrder[] => safeParse(KEYS.ORDERS, []);
-export const saveOrder = (order: ClientOrder) => {
-  const orders = getOrders();
-  const idx = orders.findIndex(o => o.id === order.id);
-  if (idx >= 0) orders[idx] = order; else orders.push(order);
-  localStorage.setItem(KEYS.ORDERS, JSON.stringify(orders));
-  writeToCloud('orders', order);
-  window.dispatchEvent(new Event('avi_data_orders'));
-};
-
-export const deleteOrder = (id: string) => {
-  const orders = getOrders().filter(o => o.id !== id);
-  localStorage.setItem(KEYS.ORDERS, JSON.stringify(orders));
-  deleteFromCloud('orders', id);
-  window.dispatchEvent(new Event('avi_data_orders'));
-};
-
-export const getOrdersByBatch = (batchId: string) => getOrders().filter(o => o.batchId === batchId);
-export const getConfig = (): AppConfig => safeParse(KEYS.CONFIG, {});
-export const saveConfig = (cfg: AppConfig) => {
-  localStorage.setItem(KEYS.CONFIG, JSON.stringify(cfg));
-  if (cfg.firebaseConfig?.apiKey) initCloudSync();
-  window.dispatchEvent(new Event('avi_data_config'));
-};
-export const isFirebaseConfigured = (): boolean => {
-  const c = getConfig();
-  return !!(c.firebaseConfig?.apiKey && c.firebaseConfig?.projectId && c.firebaseConfig?.databaseURL);
-};
-export const restoreBackup = (data: any) => {
-    if (data.users) localStorage.setItem(KEYS.USERS, data.users);
-    if (data.batches) localStorage.setItem(KEYS.BATCHES, data.batches);
-    if (data.orders) localStorage.setItem(KEYS.ORDERS, data.orders);
-    if (data.config) localStorage.setItem(KEYS.CONFIG, data.config);
-    window.location.reload();
-};
-export const resetApp = () => {
-  localStorage.clear();
-  seedData();
-  window.location.reload();
-};
-seedData();
-initCloudSync();
