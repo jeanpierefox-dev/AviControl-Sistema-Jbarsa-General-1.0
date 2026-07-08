@@ -34,7 +34,7 @@ const Collections: React.FC = () => {
     const mort = order.records.filter(r => r.type === 'MORTALITY').reduce((a,b)=>a+b.weight,0);
     let net = order.weighingMode === WeighingType.SOLO_POLLO ? full : full - empty - mort;
     const totalDue = net * order.pricePerKg;
-    const totalPaid = order.payments.reduce((a,b) => a + b.amount, 0);
+    const totalPaid = (order.payments || []).reduce((a,b) => a + b.amount, 0);
     return { totalDue, totalPaid, balance: totalDue - totalPaid };
   };
 
@@ -118,7 +118,7 @@ const Collections: React.FC = () => {
       note: 'Abono Manual' 
     };
 
-    const updatedOrder = { ...selectedOrder };
+    const updatedOrder = { ...selectedOrder, payments: [...(selectedOrder.payments || [])] };
     updatedOrder.payments.push(payment);
     const bal = calculateBalance(updatedOrder);
     
@@ -229,8 +229,8 @@ const Collections: React.FC = () => {
                   
                   <div className="p-8 max-h-[50vh] overflow-y-auto bg-slate-50/50">
                       <div className="space-y-4">
-                          {viewHistoryOrder.payments.length > 0 ? (
-                              viewHistoryOrder.payments.sort((a,b) => b.timestamp - a.timestamp).map(pay => (
+                          {(viewHistoryOrder.payments || []).length > 0 ? (
+                              [...(viewHistoryOrder.payments || [])].sort((a,b) => b.timestamp - a.timestamp).map(pay => (
                                   <div key={pay.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center group hover:border-blue-200 hover:shadow-md transition-all">
                                       <div className="flex items-center gap-4">
                                           <div className="bg-emerald-50 text-emerald-600 p-3 rounded-xl border border-emerald-100">
@@ -269,7 +269,7 @@ const Collections: React.FC = () => {
                       <div className="flex justify-between items-center mb-6 bg-slate-50 p-5 rounded-[2rem] border border-slate-100">
                           <div>
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Monto Amortizado</p>
-                            <p className="text-2xl font-digital font-black text-emerald-600">S/. {viewHistoryOrder.payments.reduce((a,b) => a + b.amount, 0).toFixed(2)}</p>
+                            <p className="text-2xl font-digital font-black text-emerald-600">S/. {(viewHistoryOrder.payments || []).reduce((a,b) => a + b.amount, 0).toFixed(2)}</p>
                           </div>
                           <div className="text-right">
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Saldo Restante</p>

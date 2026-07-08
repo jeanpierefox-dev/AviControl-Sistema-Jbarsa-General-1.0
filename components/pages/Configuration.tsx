@@ -3,9 +3,9 @@ import React, { useState, useContext, useEffect, useRef } from 'react';
 import { AppConfig } from '../../types';
 import { getConfig, saveConfig, resetApp, isFirebaseConfigured, validateConfig, uploadLocalToCloud } from '../../services/storage';
 import { 
-  Save, Check, Cloud, X, Loader2, Database, Key, Search, Cpu, Smartphone, Link, 
-  Upload, Image as ImageIcon, Globe, ServerCrash, ClipboardCheck, ExternalLink, 
-  HelpCircle, MessageSquare, Box, Layout, Trash2, Flame, Printer, Scale, Bluetooth, BluetoothOff, AlertCircle, MapPin
+  Save, Check, Cloud, X, Loader2, Database, Key, Layout, 
+  Upload, Image as ImageIcon, Trash2, Printer, Scale, Bluetooth, AlertCircle,
+  Apple, ExternalLink, Info, Smartphone, Wifi, BluetoothOff, Globe
 } from 'lucide-react';
 import { AuthContext } from '../../App';
 
@@ -20,7 +20,6 @@ const Configuration: React.FC = () => {
   const [isTested, setIsTested] = useState(false);
   
   const [browserSupport, setBrowserSupport] = useState({ 
-    serial: false, 
     bluetooth: false, 
     secure: window.isSecureContext,
     isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
@@ -41,7 +40,6 @@ const Configuration: React.FC = () => {
   useEffect(() => {
       setIsConnected(isFirebaseConfigured());
       setBrowserSupport({
-          serial: 'serial' in navigator,
           bluetooth: 'bluetooth' in navigator,
           secure: window.isSecureContext,
           isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
@@ -112,16 +110,27 @@ const Configuration: React.FC = () => {
       }
   };
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setConfig({ ...config, logoUrl: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const startNativeConnect = async (type: 'PRINTER' | 'SCALE_BT') => {
       try {
           if (!browserSupport.bluetooth) {
-              alert("❌ Bluetooth no soportado en este navegador.\n\nSi estás en iPhone/iPad, usa el navegador 'Bluefy'.\nSi estás en Android, usa Chrome con la ubicación encendida.");
+              alert("❌ Bluetooth no soportado en este navegador.\n\nSi estás en iPhone/iPad, revisa la tarjeta de Compatibilidad Apple de abajo.");
               return;
           }
 
           const device = await (navigator as any).bluetooth.requestDevice({
               acceptAllDevices: true,
-              optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'battery_service']
+              optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
           });
 
           if (device) {
@@ -137,143 +146,189 @@ const Configuration: React.FC = () => {
       }
   };
 
-  const disconnectDevice = (type: 'PRINTER' | 'SCALE_BT') => {
-      const newConfig = type === 'PRINTER' 
-        ? { ...config, printerConnected: false }
-        : { ...config, scaleConnected: false };
-      setConfig(newConfig);
-      saveConfig(newConfig);
-  };
-
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-fade-in">
+    <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-fade-in text-left">
       <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 text-left">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
               <div className="flex-1 w-full space-y-6">
                   <div className="flex items-center gap-4">
                     <div className="bg-blue-900 p-3 rounded-2xl text-white shadow-lg">
-                        <Layout size={24} fill="currentColor" />
+                        <Layout size={24} />
                     </div>
                     <div>
                         <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Identidad del Sistema</h2>
-                        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Personalización Global</p>
+                        <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Personalización Corporativa</p>
                     </div>
                   </div>
-                  <div className="space-y-4">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block px-1">Nombre de la Aplicación</label>
-                        <input value={config.companyName} onChange={e => setConfig({...config, companyName: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-slate-900 outline-none focus:border-blue-500 transition-all shadow-inner" />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre de la Empresa</label>
+                        <input 
+                            type="text" 
+                            value={config.companyName} 
+                            onChange={e => setConfig({...config, companyName: e.target.value})}
+                            className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 font-bold text-sm outline-none focus:border-blue-600 focus:bg-white transition-all"
+                        />
                       </div>
-                      <button onClick={handleSave} className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center transition-all shadow-md ${saved ? 'bg-emerald-600 text-white' : 'bg-blue-950 text-white hover:bg-blue-900'}`}>
-                        {saved ? <Check size={18} className="mr-2"/> : <Save size={18} className="mr-2" />}
-                        {saved ? 'Guardado' : 'Guardar Cambios'}
-                      </button>
-                  </div>
-              </div>
-              <div className="w-full md:w-64">
-                  <div className="p-4 border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center bg-slate-50/50 aspect-square relative shadow-inner cursor-pointer" onClick={() => logoInputRef.current?.click()}>
-                      {config.logoUrl ? (
-                          <img src={config.logoUrl} className="max-h-full max-w-full object-contain rounded-xl" alt="Logo"/>
-                      ) : (
-                          <div className="flex flex-col items-center text-slate-300">
-                              <ImageIcon size={48} className="mb-2 opacity-40"/>
-                              <span className="text-[10px] font-black uppercase text-blue-600">Subir Logo</span>
+                      <div className="space-y-2">
+                          <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Logo del Sistema</label>
+                          <div className="flex gap-4">
+                              <button 
+                                onClick={() => logoInputRef.current?.click()}
+                                className="flex-1 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-4 flex items-center justify-center gap-2 hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600"
+                              >
+                                  <ImageIcon size={20} />
+                                  <span className="text-[10px] font-black uppercase">Subir Imagen</span>
+                              </button>
+                              {config.logoUrl && (
+                                  <div className="w-16 h-16 bg-white border border-slate-200 rounded-2xl p-2 flex items-center justify-center">
+                                      <img src={config.logoUrl} className="max-h-full max-w-full object-contain" alt="Logo preview" />
+                                  </div>
+                              )}
                           </div>
-                      )}
-                      <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                              const r = new FileReader();
-                              r.onloadend = () => setConfig({ ...config, logoUrl: r.result as string });
-                              r.readAsDataURL(file);
-                          }
-                      }} />
+                          <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                      </div>
                   </div>
               </div>
           </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-          <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm text-left h-full">
-              <div className="flex items-center gap-4 mb-8 border-b border-slate-100 pb-6">
-                  <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg">
-                      <Cpu size={24} />
-                  </div>
+      {/* Dispositivos Bluetooth */}
+      <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
+          <div className="flex items-center gap-4 mb-8">
+              <div className="bg-emerald-100 p-3 rounded-2xl text-emerald-600">
+                  <Bluetooth size={24} />
+              </div>
+              <div>
+                  <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Periféricos Bluetooth</h2>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Conectividad de Estación</p>
+              </div>
+          </div>
+
+          {!browserSupport.bluetooth && (
+              <div className="mb-8 p-5 bg-amber-50 border border-amber-100 rounded-3xl flex items-start gap-4">
+                  <AlertCircle className="text-amber-500 shrink-0 mt-1" size={20} />
                   <div>
-                      <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Hardware y Periféricos</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Conexiones Bluetooth</p>
+                      <p className="text-xs font-black text-amber-900 uppercase tracking-tight">Navegador No Compatible</p>
+                      <p className="text-[11px] text-amber-700 mt-1">Tu navegador actual no permite la comunicación directa con impresoras o básculas Bluetooth.</p>
                   </div>
               </div>
+          )}
 
-              <div className="space-y-4">
-                  <div className={`p-5 rounded-3xl border-2 transition-all flex items-center justify-between ${config.printerConnected ? 'border-emerald-100 bg-emerald-50/30' : 'border-slate-100 bg-slate-50/30'}`}>
-                      <div className="flex items-center gap-4">
-                          <div className={`p-3 rounded-xl ${config.printerConnected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}><Printer size={20} /></div>
-                          <div>
-                              <p className="font-black text-xs text-slate-900 uppercase">Impresora</p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">{config.printerConnected ? 'Conectada' : 'No Vinculada'}</p>
-                          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                      <div className={`p-4 rounded-2xl ${config.printerConnected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                          <Printer size={24} />
                       </div>
-                      <button onClick={() => config.printerConnected ? disconnectDevice('PRINTER') : startNativeConnect('PRINTER')} className="bg-blue-900 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase">
-                          {config.printerConnected ? 'Soltar' : 'Vincular'}
-                      </button>
-                  </div>
-
-                  <div className={`p-5 rounded-3xl border-2 transition-all flex items-center justify-between ${config.scaleConnected ? 'border-blue-100 bg-blue-50/30' : 'border-slate-100 bg-slate-50/30'}`}>
-                      <div className="flex items-center gap-4">
-                          <div className={`p-3 rounded-xl ${config.scaleConnected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-400'}`}><Scale size={20} /></div>
-                          <div>
-                              <p className="font-black text-xs text-slate-900 uppercase">Balanza BT</p>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">{config.scaleConnected ? 'Conectada' : 'No Vinculada'}</p>
-                          </div>
+                      <div>
+                          <p className="font-black text-slate-900 uppercase text-xs tracking-tight">Impresora Térmica</p>
+                          <p className={`text-[10px] font-bold uppercase ${config.printerConnected ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {config.printerConnected ? '● Vinculado' : '○ Desconectado'}
+                          </p>
                       </div>
-                      <button onClick={() => config.scaleConnected ? disconnectDevice('SCALE_BT') : startNativeConnect('SCALE_BT')} className="bg-blue-900 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase">
-                          {config.scaleConnected ? 'Soltar' : 'Vincular'}
-                      </button>
                   </div>
-              </div>
-          </div>
-
-          <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm text-left h-full">
-              <div className="flex items-center justify-between mb-8 border-b border-slate-100 pb-6">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-4 rounded-2xl ${isConnected ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}><Cloud size={28}/></div>
-                    <div>
-                        <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Nube de Datos</h3>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isConnected ? 'Sincronizado' : 'Modo Local'}</p>
-                    </div>
-                  </div>
+                  {config.printerConnected ? (
+                      <button onClick={() => setConfig({...config, printerConnected: false})} className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"><X size={20}/></button>
+                  ) : (
+                      <button onClick={() => startNativeConnect('PRINTER')} className="bg-blue-900 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all">Enlazar</button>
+                  )}
               </div>
 
-              {!isConnected ? (
-                  <div className="space-y-4">
-                      <input value={manualForm.projectId} onChange={e => setManualForm({...manualForm, projectId: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-xs" placeholder="Firebase Project ID *" />
-                      <input value={manualForm.apiKey} onChange={e => setManualForm({...manualForm, apiKey: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-xs" placeholder="API Key *" />
-                      <input value={manualForm.databaseURL} onChange={e => setManualForm({...manualForm, databaseURL: e.target.value})} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-xs" placeholder="Database URL *" />
-                      <div className="flex gap-2">
-                        <button onClick={handleTestConnection} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase">Probar</button>
-                        <button onClick={handleLinkCloud} disabled={!isTested} className="flex-1 bg-emerald-600 disabled:bg-slate-200 text-white py-4 rounded-2xl font-black text-[10px] uppercase">Vincular</button>
+              <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                      <div className={`p-4 rounded-2xl ${config.scaleConnected ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                          <Scale size={24} />
+                      </div>
+                      <div>
+                          <p className="font-black text-slate-900 uppercase text-xs tracking-tight">Báscula Digital</p>
+                          <p className={`text-[10px] font-bold uppercase ${config.scaleConnected ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {config.scaleConnected ? '● Vinculado' : '○ Desconectado'}
+                          </p>
                       </div>
                   </div>
-              ) : (
-                  <div className="flex flex-col items-center gap-4 py-4">
-                      <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600"><Cloud size={32}/></div>
-                      <p className="text-xs font-black text-slate-900 uppercase">{config.firebaseConfig?.projectId}</p>
-                      <button onClick={handleUploadData} disabled={isUploading} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2">
-                        {isUploading ? <Loader2 size={16} className="animate-spin"/> : <Upload size={16}/>} Subir Local a Nube
-                      </button>
-                  </div>
-              )}
+                  {config.scaleConnected ? (
+                      <button onClick={() => setConfig({...config, scaleConnected: false})} className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"><X size={20}/></button>
+                  ) : (
+                      <button onClick={() => startNativeConnect('SCALE_BT')} className="bg-blue-900 text-white px-5 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all">Enlazar</button>
+                  )}
+              </div>
           </div>
       </div>
-      
-      <div className="p-8 bg-red-50 rounded-[2.5rem] border border-red-100 flex flex-col md:flex-row items-center justify-between gap-6 text-left">
-          <div>
-              <p className="font-black text-red-800 text-sm uppercase">Mantenimiento Crítico</p>
-              <p className="text-[10px] text-red-600 font-bold uppercase mt-1">Elimina todos los datos locales de este dispositivo.</p>
-          </div>
-          <button onClick={() => { if(confirm('¿Borrar todo?')) resetApp(); }} className="bg-red-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 flex items-center gap-2">
-            <Trash2 size={18} /> Restablecer Fábrica
+
+      {/* Apple Compatibility Card */}
+      {browserSupport.isIOS && (
+        <div className="bg-white rounded-[2.5rem] border border-blue-200 p-8 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
+                <Apple size={160} />
+            </div>
+            <div className="flex items-center gap-4 mb-6">
+                <div className="bg-blue-600 p-3 rounded-2xl text-white">
+                    <Apple size={24} />
+                </div>
+                <div>
+                    <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Compatibilidad Apple iOS</h2>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Guía para iPhone / iPad</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                <div className="space-y-4">
+                    <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        Safari y Chrome en iOS bloquean el acceso al Bluetooth. Para conectar impresoras o balanzas directamente desde el sistema, debes usar un navegador que habilite esta función.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                        <a 
+                            href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" 
+                            target="_blank" 
+                            className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-400 transition-all group"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white rounded-xl shadow-sm"><Smartphone size={16} className="text-blue-600"/></div>
+                                <span className="text-[11px] font-black uppercase tracking-wider text-slate-700">Descargar Bluefy</span>
+                            </div>
+                            <ExternalLink size={16} className="text-slate-300 group-hover:text-blue-600" />
+                        </a>
+                        <a 
+                            href="https://apps.apple.com/app/webble/id1193531073" 
+                            target="_blank" 
+                            className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-400 transition-all group"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white rounded-xl shadow-sm"><Globe size={16} className="text-blue-600"/></div>
+                                <span className="text-[11px] font-black uppercase tracking-wider text-slate-700">Descargar WebBLE</span>
+                            </div>
+                            <ExternalLink size={16} className="text-slate-300 group-hover:text-blue-600" />
+                        </a>
+                    </div>
+                </div>
+                <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100">
+                    <h4 className="flex items-center gap-2 text-[10px] font-black text-blue-900 uppercase tracking-widest mb-3">
+                        <Info size={14}/> Alternativa de Impresión
+                    </h4>
+                    <p className="text-[10px] text-blue-800/80 leading-relaxed font-medium">
+                        Si no deseas usar un navegador especial, puedes usar el botón "Reporte A4 PDF" para abrir el menú nativo de iOS y enviar el documento a aplicaciones puente como <span className="font-bold">RawBT</span> o <span className="font-bold">PrintHand</span> que ya tengas instaladas.
+                    </p>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Cloud & Reset */}
+      <div className="flex flex-col md:flex-row gap-6">
+          <button 
+            onClick={handleSave}
+            className="flex-1 bg-blue-900 text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-900/10 hover:bg-blue-800 transition-all active:scale-95 flex items-center justify-center gap-3"
+          >
+              {saved ? <Check size={20}/> : <Save size={20}/>}
+              {saved ? 'Cambios Guardados' : 'Guardar Configuración'}
+          </button>
+          <button 
+            onClick={() => { if(confirm('¿BORRAR TODO? Esto restaurará el sistema a fábrica.')) resetApp(); }}
+            className="md:w-64 bg-white text-red-500 border-2 border-red-50 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest hover:bg-red-50 transition-all flex items-center justify-center gap-3"
+          >
+              <Trash2 size={20}/> Formatear Sistema
           </button>
       </div>
     </div>
