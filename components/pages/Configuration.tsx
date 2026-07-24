@@ -194,6 +194,48 @@ const Configuration: React.FC = () => {
           </div>
       </div>
 
+      {/* Conexión a la Nube */}
+      <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
+                  <div className={`p-3 rounded-2xl ${isConnected ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                      <Cloud size={24} />
+                  </div>
+                  <div>
+                      <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Sincronización en la Nube</h2>
+                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Conexión Automática y Respaldo</p>
+                  </div>
+              </div>
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-black uppercase tracking-wider ${isConnected ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                  {isConnected ? <Wifi size={16} className="animate-pulse text-emerald-500"/> : <WifiOff size={16}/>}
+                  <span>{isConnected ? 'Conectado Automáticamente' : 'Modo Local'}</span>
+              </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Estado de la Nube</h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                          {isConnected 
+                            ? 'El sistema está sincronizando automáticamente datos de lotes, pesajes y cobranzas en tiempo real.' 
+                            : 'El sistema funciona de manera local. La conexión se habilitará automáticamente cuando el servidor de nube esté activo.'}
+                      </p>
+                  </div>
+                  {isConnected && (
+                      <button 
+                          onClick={handleUploadData}
+                          disabled={isUploading}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex items-center gap-2 shrink-0 disabled:opacity-50"
+                      >
+                          {isUploading ? <Loader2 size={16} className="animate-spin"/> : <Upload size={16}/>}
+                          <span>{isUploading ? 'Subiendo...' : 'Sincronizar Ahora'}</span>
+                      </button>
+                  )}
+              </div>
+          </div>
+      </div>
+
       {/* Dispositivos Bluetooth */}
       <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-sm">
           <div className="flex items-center gap-4 mb-8">

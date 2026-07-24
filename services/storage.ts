@@ -15,6 +15,8 @@ import {
     terminate
 } from 'firebase/firestore';
 
+import firebaseAppletConfig from '../firebase-applet-config.json';
+
 const KEYS = {
   USERS: 'avi_users',
   BATCHES: 'avi_batches',
@@ -31,6 +33,17 @@ const safeParse = (key: string, fallback: any) => {
         console.warn(`Data corruption detected in ${key}. Resetting to default.`);
         return fallback;
     }
+};
+
+export const getEffectiveFirebaseConfig = () => {
+    if (firebaseAppletConfig && firebaseAppletConfig.apiKey && firebaseAppletConfig.projectId) {
+        return firebaseAppletConfig;
+    }
+    const config = getConfig();
+    if (config.firebaseConfig && config.firebaseConfig.apiKey && config.firebaseConfig.projectId) {
+        return config.firebaseConfig;
+    }
+    return null;
 };
 
 export const getConfig = (): AppConfig => {
@@ -50,8 +63,8 @@ export const saveConfig = (config: AppConfig) => {
 };
 
 export const isFirebaseConfigured = (): boolean => {
-    const config = getConfig();
-    return !!(config.firebaseConfig?.apiKey && config.firebaseConfig?.projectId && config.firebaseConfig?.databaseURL);
+    const effective = getEffectiveFirebaseConfig();
+    return !!(effective && effective.apiKey && effective.projectId);
 };
 
 export const resetApp = () => {
@@ -118,28 +131,34 @@ export const validateConfig = async (firebaseConfig: any): Promise<{ valid: bool
 };
 
 export const initCloudSync = async () => {
-  const config = getConfig();
+  const firebaseCfg = getEffectiveFirebaseConfig();
   unsubscribers.forEach(unsub => unsub());
   unsubscribers = [];
 
-  if (isFirebaseConfigured()) {
+  if (firebaseCfg && firebaseCfg.apiKey && firebaseCfg.projectId) {
     try {
       let app: FirebaseApp;
       const apps = getApps();
       const defaultApp = apps.find(a => a.name === '[DEFAULT]');
       
       if (!defaultApp) {
-          app = initializeApp(config.firebaseConfig!);
+          app = initializeApp(firebaseCfg as any);
           try {
-            db = initializeFirestore(app, { cacheSizeBytes: CACHE_SIZE_UNLIMITED });
-            await enableIndexedDbPersistence(db); 
+            const dbId = (firebaseCfg as any).firestoreDatabaseId;
+            db = dbId ? getFirestore(app, dbId) : getFirestore(app);
+            try {
+              await enableIndexedDbPersistence(db);
+            } catch (pErr: any) {
+              console.warn("Persistencia offline no disponible:", pErr.code);
+            }
           } catch (err: any) {
             if (!db) db = getFirestore(app);
-            console.warn("Persistencia offline no disponible:", err.code);
+            console.warn("Firestore init warning:", err);
           }
       } else {
           app = defaultApp;
-          db = getFirestore(app);
+          const dbId = (firebaseCfg as any).firestoreDatabaseId;
+          db = dbId ? getFirestore(app, dbId) : getFirestore(app);
       }
       startListeners();
     } catch (e) {
@@ -147,6 +166,13 @@ export const initCloudSync = async () => {
     }
   }
 };
+
+// Start cloud sync automatically if configured
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    initCloudSync();
+  }, 100);
+}
 
 export const getUsers = (): User[] => {
     const users = safeParse(KEYS.USERS, []);
