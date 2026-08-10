@@ -6,11 +6,10 @@ import { getOrders, saveOrder, getConfig, deleteOrder } from '../../services/sto
 import { 
   ArrowLeft, Save, X, Eye, Package, PackageOpen, 
   User, Trash2, Box, UserPlus, Bird, Printer, Receipt, 
-  Activity, Download, List, ChevronRight, Scale
+  Activity, Download, List, ChevronRight, Scale, FileText
 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { AuthContext } from '../../App';
+import { generateTicketPDF, generateSummaryTicketPDF, generateA4ClientPDF, getOrderTotals } from '../../services/pdfHelper';
 
 const WeighingStation: React.FC = () => {
   const { mode, batchId } = useParams<{ mode: string; batchId?: string }>();
@@ -105,19 +104,7 @@ const WeighingStation: React.FC = () => {
     setShowClientModal(false);
   };
 
-  const getTotals = (order: ClientOrder) => {
-    const full = order.records.filter(r => r.type === 'FULL');
-    const empty = order.records.filter(r => r.type === 'EMPTY');
-    const mort = order.records.filter(r => r.type === 'MORTALITY');
-    const wF = full.reduce((a, b) => a + b.weight, 0);
-    const wE = empty.reduce((a, b) => a + b.weight, 0);
-    const wM = mort.reduce((a, b) => a + b.weight, 0);
-    const qF = full.reduce((a, b) => a + b.quantity, 0);
-    const qE = empty.reduce((a, b) => a + b.quantity, 0);
-    const qM = mort.reduce((a, b) => a + b.quantity, 0);
-    const net = order.weighingMode === WeighingType.SOLO_POLLO ? wF : wF - wE - wM;
-    return { wF, wE, wM, qF, qE, qM, net };
-  };
+  const getTotals = (order: ClientOrder) => getOrderTotals(order);
 
   const addWeight = () => {
     if (!activeOrder || !weightInput || !qtyInput) return;
@@ -139,85 +126,7 @@ const WeighingStation: React.FC = () => {
     setActiveOrder(updated);
   };
 
-  const handlePDFOutput = (doc: jsPDF, filename: string) => {
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
-    const newWindow = window.open(url, '_blank');
-    if (!newWindow) {
-      window.location.href = url;
-    }
-  };
-
-  const generateTicketPDF = (order: ClientOrder) => {
-    const t = getTotals(order);
-    const doc = new jsPDF({ unit: 'mm', format: [80, 150] });
-    doc.setFontSize(14).setFont("helvetica", "bold");
-    doc.text(config.companyName.toUpperCase(), 40, 10, { align: 'center' });
-    doc.setFontSize(8).setFont("helvetica", "normal");
-    doc.text("TICKET DE CARGA", 40, 15, { align: 'center' });
-    doc.text(new Date().toLocaleString(), 40, 19, { align: 'center' });
-    doc.line(5, 22, 75, 22);
-    doc.setFontSize(10).text(`CLIENTE: ${order.clientName.toUpperCase()}`, 5, 28);
-    doc.rect(5, 33, 70, 35);
-    doc.text(`BRUTO: ${t.wF.toFixed(2)} kg`, 10, 42);
-    doc.text(`TARA: -${t.wE.toFixed(2)} kg`, 10, 48);
-    doc.text(`MERMA: -${t.wM.toFixed(2)} kg`, 10, 54);
-    doc.setFontSize(12).setFont("helvetica", "bold").text(`NETO: ${t.net.toFixed(2)} kg`, 10, 63);
-    doc.setFontSize(9).text(`TOTAL: S/. ${(t.net * order.pricePerKg).toFixed(2)}`, 5, 75);
-    doc.text("Gracias por su preferencia", 40, 100, { align: 'center' });
-    handlePDFOutput(doc, `Ticket_${order.id}.pdf`);
-  };
-
-  const generateA4ClientPDF = (order: ClientOrder) => {
-    const t = getTotals(order);
-    const doc = new jsPDF();
-    doc.setFont("helvetica", "bold").setFontSize(18);
-    doc.text(config.companyName.toUpperCase(), 105, 15, { align: 'center' });
-    doc.setFontSize(10).setFont("helvetica", "normal").text("REPORTE DETALLADO DE PESAJE", 105, 22, { align: 'center' });
-    
-    doc.setFontSize(11).setFont("helvetica", "bold").text(`CLIENTE: ${order.clientName.toUpperCase()}`, 14, 35);
-    doc.setFontSize(9).setFont("helvetica", "normal").text(`ID ORDEN: ${order.id} | FECHA: ${new Date().toLocaleDateString()}`, 14, 40);
-
-    autoTable(doc, {
-      startY: 45,
-      head: [['CATEGORÍA', 'PESO TOTAL', 'CANTIDAD JABAS']],
-      body: [
-        ['PESO BRUTO (LLENAS)', `${t.wF.toFixed(2)} kg`, t.qF],
-        ['PESO TARA (VACÍAS)', `${t.wE.toFixed(2)} kg`, t.qE],
-        ['PESO MERMA (MORTALIDAD)', `${t.wM.toFixed(2)} kg`, t.qM],
-        [{ content: 'PESO NETO TOTAL', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }, { content: `${t.net.toFixed(2)} kg`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }, '']
-      ],
-      theme: 'grid'
-    });
-
-    doc.text("DESGLOSE DE CARGA (FORMATO MULTI-COLUMNA PARA AHORRO DE ESPACIO)", 14, (doc as any).lastAutoTable.finalY + 10);
-    
-    // Multi-column grouping for weights
-    const fullRecs = order.records.filter(r => r.type === 'FULL');
-    const cols = 8; // More columns for better compaction
-    const body = [];
-    for (let i = 0; i < fullRecs.length; i += cols) {
-        const row = [];
-        for (let j = 0; j < cols; j++) {
-            const r = fullRecs[i + j];
-            row.push(r ? `${r.weight.toFixed(1)}` : '');
-        }
-        body.push(row);
-    }
-
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 15,
-      head: Array(cols).fill(0).map((_, i) => [`P.${i+1}`]),
-      body: body,
-      theme: 'grid',
-      styles: { fontSize: 8, halign: 'center', cellPadding: 1 },
-      headStyles: { fillColor: [40, 40, 40] }
-    });
-
-    handlePDFOutput(doc, `Reporte_Compacto_${order.clientName}.pdf`);
-  };
-
-  const handlePayment = () => {
+  const handlePayment = (ticketType: 'SUMMARY' | 'DETAILED' = 'SUMMARY') => {
     if (!activeOrder || !pricePerKg) return;
     const price = parseFloat(pricePerKg.toString());
     const updatedOrder: ClientOrder = {
@@ -228,7 +137,11 @@ const WeighingStation: React.FC = () => {
     };
     saveOrder(updatedOrder);
     setActiveOrder(updatedOrder);
-    generateTicketPDF(updatedOrder);
+    if (ticketType === 'SUMMARY') {
+      generateSummaryTicketPDF(updatedOrder, config);
+    } else {
+      generateTicketPDF(updatedOrder, config);
+    }
     setShowPaymentModal(false);
     loadOrders();
   };
@@ -309,12 +222,15 @@ const WeighingStation: React.FC = () => {
                         </button>
                     </div>
 
-                    <div className="flex flex-col md:flex-row gap-4 mb-8">
-                        <button onClick={() => generateTicketPDF(showDetailModal)} className="flex-1 bg-white text-slate-900 border-2 border-slate-100 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-slate-50 transition-all">
-                            <Printer size={18} /> Ticket Térmico
+                    <div className="flex flex-col sm:flex-row gap-3 mb-8">
+                        <button onClick={() => generateSummaryTicketPDF(showDetailModal, config)} className="flex-1 bg-emerald-600 text-white px-5 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-xl transition-all" title="Ticket de Resumen sin pesas">
+                            <Receipt size={18} /> Ticket Resumen (Sin Pesas)
                         </button>
-                        <button onClick={() => generateA4ClientPDF(showDetailModal)} className="flex-1 bg-blue-950 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-blue-900 shadow-xl transition-all">
-                            <Download size={18} /> Reporte A4 (Compacto)
+                        <button onClick={() => generateTicketPDF(showDetailModal, config)} className="flex-1 bg-white text-slate-900 border-2 border-slate-100 px-5 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-50 transition-all">
+                            <Printer size={18} /> Ticket Detallado
+                        </button>
+                        <button onClick={() => generateA4ClientPDF(showDetailModal, config)} className="flex-1 bg-blue-950 text-white px-5 py-4 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-blue-900 shadow-xl transition-all">
+                            <Download size={18} /> Reporte A4
                         </button>
                     </div>
 
@@ -420,27 +336,34 @@ const WeighingStation: React.FC = () => {
           </div>
 
           {/* Botones de acción debajo de los totales */}
-          <div className="flex flex-row gap-3 mt-6 w-full">
+          <div className="flex flex-wrap gap-3 mt-6 w-full">
             <button 
                 onClick={() => setShowDetailModal(activeOrder)}
-                className="flex-[1] bg-white/10 text-white p-5 rounded-2xl hover:bg-white/20 transition-all border border-white/10 flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-widest active:scale-95"
+                className="flex-1 min-w-[140px] bg-white/10 text-white p-4 rounded-2xl hover:bg-white/20 transition-all border border-white/10 flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest active:scale-95"
             >
-                <Eye size={24}/> Ver Desglose
+                <Eye size={20}/> Ver Desglose
+            </button>
+            <button 
+                onClick={() => generateSummaryTicketPDF(activeOrder, config)}
+                className="flex-1 min-w-[160px] bg-emerald-500 text-white p-4 rounded-2xl hover:bg-emerald-400 transition-all font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                title="Ticket Resumen de Carga (Sin Pesas)"
+            >
+                <Receipt size={20}/> Ticket Resumen
             </button>
             {!isLocked && (
                 <button 
                   onClick={() => setShowPaymentModal(true)} 
-                  className="flex-[2] bg-white text-blue-950 p-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-blue-50 active:scale-95 transition-all flex items-center justify-center gap-3"
+                  className="flex-1 min-w-[160px] bg-white text-blue-950 p-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-blue-50 active:scale-95 transition-all flex items-center justify-center gap-2"
                 >
-                    <Receipt size={22} /> Liquidar Operación
+                    <Printer size={20} /> Liquidar Operación
                 </button>
             )}
             {isLocked && (
                <button 
-                  onClick={() => generateTicketPDF(activeOrder)}
-                  className="flex-[2] bg-emerald-500 text-white p-5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-emerald-400 active:scale-95 transition-all flex items-center justify-center gap-3"
+                  onClick={() => generateTicketPDF(activeOrder, config)}
+                  className="flex-1 min-w-[160px] bg-blue-900 text-white p-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-blue-800 active:scale-95 transition-all flex items-center justify-center gap-2"
                >
-                  <Printer size={22} /> Reimprimir Ticket
+                  <Printer size={20} /> Ticket Detallado
                </button>
             )}
           </div>
@@ -527,9 +450,14 @@ const WeighingStation: React.FC = () => {
                     <input type="number" value={pricePerKg} onChange={e => setPricePerKg(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-5 font-black text-2xl outline-none focus:border-emerald-500 focus:bg-white transition-all text-center" placeholder="0.00" step="0.01" autoFocus />
                 </div>
             </div>
-            <div className="mt-12 flex flex-col gap-3">
-              <button onClick={handlePayment} className="w-full bg-emerald-600 text-white py-6 rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl shadow-emerald-200 hover:bg-emerald-500 active:scale-95 transition-all">Confirmar e Imprimir</button>
-              <button onClick={() => setShowPaymentModal(false)} className="w-full py-4 text-slate-400 font-black text-[11px] uppercase tracking-widest hover:text-slate-600 transition-colors">Volver</button>
+            <div className="mt-8 flex flex-col gap-3">
+              <button onClick={() => handlePayment('SUMMARY')} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-500 active:scale-95 transition-all flex items-center justify-center gap-2">
+                <Receipt size={18}/> Liquidar con Ticket Resumen
+              </button>
+              <button onClick={() => handlePayment('DETAILED')} className="w-full bg-blue-950 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-900 active:scale-95 transition-all flex items-center justify-center gap-2">
+                <Printer size={18}/> Liquidar con Ticket Detallado
+              </button>
+              <button onClick={() => setShowPaymentModal(false)} className="w-full py-3 text-slate-400 font-black text-[11px] uppercase tracking-widest hover:text-slate-600 transition-colors">Volver</button>
             </div>
           </div>
         </div>

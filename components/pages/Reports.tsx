@@ -4,11 +4,10 @@ import { getBatches, getOrders, getConfig } from '../../services/storage';
 import { Batch, ClientOrder, WeighingType, UserRole, WeighingRecord } from '../../types';
 import { 
   ChevronDown, ChevronUp, Package, ShoppingCart, List, Printer, 
-  Eye, FileText, Download, Table as TableIcon, FileCheck, Calendar, Search
+  Eye, FileText, Download, Table as TableIcon, FileCheck, Calendar, Search, Receipt
 } from 'lucide-react';
 import { AuthContext } from '../../App';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { generateTicketPDF, generateSummaryTicketPDF, generateA4ClientPDF } from '../../services/pdfHelper';
 
 const Reports: React.FC = () => {
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -232,11 +231,14 @@ const Reports: React.FC = () => {
                                                     <p className="text-slate-400 text-[9px] font-bold uppercase mt-1">Registros agrupados (Vista Compacta)</p>
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2 w-full md:w-auto">
-                                                <button onClick={() => generateTicketPDF(order)} className="flex-1 md:flex-none bg-white text-slate-900 border border-slate-200 px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-50 shadow-sm transition-all">
-                                                    <Printer size={16} /> Ticket (80mm)
+                                            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                                                <button onClick={() => generateTicketPDF(order, config)} className="flex-1 md:flex-none bg-white text-slate-900 border border-slate-200 px-4 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-50 shadow-sm transition-all">
+                                                    <Printer size={16} /> Ticket Detallado
                                                 </button>
-                                                <button onClick={() => generateA4ClientPDF(order)} className="flex-1 md:flex-none bg-blue-900 text-white px-5 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-blue-800 shadow-lg transition-all">
+                                                <button onClick={() => generateSummaryTicketPDF(order, config)} className="flex-1 md:flex-none bg-emerald-600 text-white px-4 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-md transition-all" title="Ticket de Resumen sin pesas">
+                                                    <Receipt size={16} /> Ticket Resumen
+                                                </button>
+                                                <button onClick={() => generateA4ClientPDF(order, config)} className="flex-1 md:flex-none bg-blue-900 text-white px-4 py-3 rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-blue-800 shadow-lg transition-all">
                                                     <Download size={16} /> Reporte A4 PDF
                                                 </button>
                                             </div>
